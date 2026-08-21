@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build output
+.next/
+out/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Package lock intentionally excluded for this project
+package-lock.json
