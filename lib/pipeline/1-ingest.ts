@@ -16,6 +16,12 @@ export async function ingestUserCompany(companyUrl: string): Promise<string> {
         "BRIGHT_DATA_COLLECTOR_COMPANY_SITE is not set - create the Bright Data company-site collector and add its c_... ID to .env.local"
       );
     }
+    if (COMPANY_SITE_COLLECTOR.includes("xxxxxxxx")) {
+      throw new PipelineStageError(
+        STAGE,
+        "BRIGHT_DATA_COLLECTOR_COMPANY_SITE is still a placeholder - replace it with the c_... Collector ID from Bright Data Scraper Studio"
+      );
+    }
 
     const result = await scrapeUrl(COMPANY_SITE_COLLECTOR, companyUrl);
     if (!result) {

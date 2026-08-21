@@ -8,7 +8,7 @@ async function main() {
 
   if (!collectorId || collectorId === "c_xxxxxxxxxxxxxxxx") {
     throw new Error(
-      "Set BRIGHT_DATA_COLLECTOR_COMPANY_SITE in .env.local before running this test."
+      "Set BRIGHT_DATA_COLLECTOR_COMPANY_SITE to a real c_... Collector ID in .env or .env.local before running this test."
     );
   }
 

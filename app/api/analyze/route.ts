@@ -17,12 +17,16 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as AnalyzeRequest;
-    if (!body.companyUrl) {
-      return NextResponse.json({ error: "companyUrl is required" }, { status: 400 });
+    const companyUrl = normalizeCompanyUrl(body.companyUrl);
+    if (!companyUrl) {
+      return NextResponse.json(
+        { error: "Enter a valid company URL, for example https://company.com" },
+        { status: 400 }
+      );
     }
 
     logger.pipelineStart(runId, {
-      companyUrl: body.companyUrl,
+      companyUrl,
       includeSentiment: Boolean(body.includeSentiment)
     });
 
@@ -36,10 +40,10 @@ export async function POST(request: Request) {
     };
     const completedStages: number[] = [];
 
-    const rawContent = await ingestUserCompany(body.companyUrl);
+    const rawContent = await ingestUserCompany(companyUrl);
     completedStages.push(1);
 
-    state.userCompany = await understandCompany(rawContent, body.companyUrl);
+    state.userCompany = await understandCompany(rawContent, companyUrl);
     completedStages.push(2);
 
     state.competitorsRaw = await discoverCompetitors(state.userCompany);
@@ -73,5 +77,28 @@ export async function POST(request: Request) {
       { runId, error: error instanceof Error ? error.message : "Pipeline failed" },
       { status: 500 }
     );
+  }
+}
+
+function normalizeCompanyUrl(input: unknown): string | null {
+  if (typeof input !== "string") {
+    return null;
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const url = new URL(withProtocol);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname.includes(".")) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
   }
 }
