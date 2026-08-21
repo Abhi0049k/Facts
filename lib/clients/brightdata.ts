@@ -29,6 +29,10 @@ export async function triggerCollector(
   collectorId: string,
   inputs: TriggerInput[]
 ): Promise<string> {
+  if (!API_TOKEN) {
+    throw new Error("BRIGHT_DATA_API_TOKEN is not set");
+  }
+
   const url = `${API_BASE}/dca/trigger?collector=${collectorId}&queue_next=1`;
   logger.stageStart("BrightData", "trigger collector", { collectorId, inputCount: inputs.length });
 
@@ -42,9 +46,17 @@ export async function triggerCollector(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Bright Data 401: API token is missing, invalid, or revoked");
+    }
+    if (response.status === 404) {
+      throw new Error(
+        `Bright Data 404: collector ${collectorId} was not found or is not available to this account`
+      );
+    }
     if (response.status === 422) {
       throw new Error(
-        `Bright Data 422: input shape does not match collector ${collectorId}'s input schema`
+        `Bright Data 422: input shape does not match collector ${collectorId}'s input schema. This app sends [{"url":"..."}], so the collector input must include a url field.`
       );
     }
     throw new Error(`Bright Data trigger failed: ${response.status}`);
@@ -66,6 +78,10 @@ export async function pollForResults<T = Record<string, unknown>>(
   snapshotId: string,
   { maxWaitMs = 120_000, intervalMs = 5_000 }: { maxWaitMs?: number; intervalMs?: number } = {}
 ): Promise<T[]> {
+  if (!API_TOKEN) {
+    throw new Error("BRIGHT_DATA_API_TOKEN is not set");
+  }
+
   const url = `${API_BASE}/dca/dataset?id=${snapshotId}`;
   const deadline = Date.now() + maxWaitMs;
   logger.stageStart("BrightData", "poll snapshot", { snapshotId, maxWaitMs, intervalMs });
@@ -100,7 +116,61 @@ export async function pollForResults<T = Record<string, unknown>>(
 }
 
 /**
- * Convenience wrapper: trigger + poll in one call.
+ * Scrapes using Bright Data Datasets API v3 synchronous endpoint:
+ * POST /datasets/v3/scrape?dataset_id={datasetId}&notify=false&include_errors=true
+ */
+export async function scrapeDatasetV3<T = Record<string, unknown>>(
+  datasetId: string,
+  inputs: TriggerInput[]
+): Promise<T[]> {
+  if (!API_TOKEN) {
+    throw new Error("BRIGHT_DATA_API_TOKEN is not set");
+  }
+
+  const url = `${API_BASE}/datasets/v3/scrape?dataset_id=${datasetId}&notify=false&include_errors=true`;
+  logger.stageStart("BrightData", "dataset v3 scrape", { datasetId, inputCount: inputs.length });
+
+  const response = await fetchWithRetry(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${API_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input: inputs,
+      limit_per_input: null
+    })
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Bright Data 401: API token is missing, invalid, or revoked");
+    }
+    if (response.status === 404) {
+      throw new Error(`Bright Data 404: dataset ${datasetId} was not found`);
+    }
+    throw new Error(`Bright Data v3 scrape failed: ${response.status}`);
+  }
+
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    if (Array.isArray(parsed)) {
+      return parsed as T[];
+    }
+    return [parsed as T];
+  } catch {
+    const lines = rawText.split("\n").filter((line) => line.trim().length > 0);
+    return lines.map((line) => JSON.parse(line) as T);
+  }
+}
+
+/**
+ * Convenience wrapper: trigger + poll in one call (or direct v3 dataset scrape).
  * Use this from pipeline stages unless you need to fan out many
  * triggers before polling any of them.
  */
@@ -110,7 +180,25 @@ export async function scrapeUrl<T = Record<string, unknown>>(
   extraInputFields: Record<string, unknown> = {}
 ): Promise<T | null> {
   try {
-    const snapshotId = await triggerCollector(collectorId, [{ url, ...extraInputFields }]);
+    const inputs = [{ url, ...extraInputFields }];
+
+    // If dataset ID starts with gd_ (or is v3 dataset), use v3 dataset scrape directly
+    if (collectorId.startsWith("gd_")) {
+      const results = await scrapeDatasetV3<T>(collectorId, inputs);
+      return results[0] ?? null;
+    }
+
+    // Try v3 dataset scrape first for c_... collectors, falling back to DCA trigger
+    try {
+      const results = await scrapeDatasetV3<T>(collectorId, inputs);
+      if (results && results.length > 0) {
+        return results[0];
+      }
+    } catch {
+      // Fallback to legacy DCA trigger + polling
+    }
+
+    const snapshotId = await triggerCollector(collectorId, inputs);
     const results = await pollForResults<T>(snapshotId);
     return results[0] ?? null;
   } catch (err) {

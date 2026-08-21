@@ -88,10 +88,12 @@ The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data requ
 
 ## Setting Up Bright Data Collectors
 
-Go to [Scraper Studio](https://brightdata.com/cp/scrapers) in the Bright Data control panel, or use the Bright Data CLI:
+Go to [Scraper Studio](https://brightdata.com/cp/scrapers) in the Bright Data control panel, or use the Bright Data CLI through `npx` so nothing needs to be installed globally:
 
 ```bash
-bdata scraper create <sample-url> "<what to extract>"
+npx -p @brightdata/cli bdata login
+npx -p @brightdata/cli bdata --version
+npx -p @brightdata/cli bdata scraper create <sample-url> "<what to extract>"
 ```
 
 Create four collectors, one per source type:
@@ -104,6 +106,16 @@ Create four collectors, one per source type:
 | Tofler collector | A Tofler company page | Extract company name, revenue, profit, filing year, CIN |
 
 Review the AI-inferred schema for each collector before confirming. This is the checkpoint for catching misaligned fields before the app sends runtime inputs.
+
+The runtime integration sends each user-provided URL to Bright Data as a default Scraper Studio input object:
+
+```json
+[
+  { "url": "https://company.com/" }
+]
+```
+
+Make sure each collector accepts a `url` input field. Bright Data returns a `collection_id` from `/dca/trigger`; the app treats that value as the snapshot ID and polls `/dca/dataset?id=<snapshot_id>` until the JSON array is ready.
 
 Copy each resulting Collector ID (`c_...`) into `.env.local`:
 
@@ -122,7 +134,7 @@ Before running the full pipeline, test the company-site collector:
 npm run test:brightdata
 ```
 
-This triggers the company-site collector against Kalvium's site by default, logs the raw result, and checks that the output can be serialized as Stage 2 input. Override the test URL with `BRIGHT_DATA_TEST_URL` if needed.
+This triggers the company-site collector against Kalvium's site by default, logs the raw result, and checks that the output can be serialized as Stage 2 input. Override the test URL with `BRIGHT_DATA_TEST_URL` if needed. The UI uses the same flow: the company URL entered in the form is posted to `/api/analyze`, normalized, and passed to Bright Data as the `url` input.
 
 ## Pipeline stage reference
 

@@ -8,7 +8,7 @@ import type { AnalyzeResponse } from "@/lib/types";
 
 export default function Home() {
   const router = useRouter();
-  const [companyUrl, setCompanyUrl] = useState("https://example.com");
+  const [companyUrl, setCompanyUrl] = useState("");
   const [includeSentiment, setIncludeSentiment] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [currentStage, setCurrentStage] = useState(1);
@@ -91,8 +91,8 @@ export default function Home() {
               className="w-full border-0 bg-transparent text-sm text-ink outline-none"
               id="company-url"
               onChange={(event) => setCompanyUrl(event.target.value)}
-              placeholder="https://company.com"
-              type="url"
+              placeholder="company.com or https://company.com"
+              type="text"
               value={companyUrl}
             />
           </div>

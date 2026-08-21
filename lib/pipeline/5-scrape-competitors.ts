@@ -21,17 +21,17 @@ export async function scrapeCompetitors(
         const websiteUrl = `https://${competitor.domain}`;
         logger.debug(STAGE, `scraping ${competitor.name}`, { domain: competitor.domain });
         const sourceRequests = {
-          website: COMPANY_SITE_COLLECTOR
+          website: usableCollector(COMPANY_SITE_COLLECTOR)
             ? scrapeUrl(COMPANY_SITE_COLLECTOR, websiteUrl)
             : Promise.resolve(null),
-          crunchbase: CRUNCHBASE_COLLECTOR
+          crunchbase: usableCollector(CRUNCHBASE_COLLECTOR)
             ? scrapeUrl(CRUNCHBASE_COLLECTOR, `https://www.crunchbase.com/organization/${slug}`)
             : Promise.resolve(null),
           tracxn: Promise.resolve(null),
-          linkedin: LINKEDIN_COLLECTOR
+          linkedin: usableCollector(LINKEDIN_COLLECTOR)
             ? scrapeUrl(LINKEDIN_COLLECTOR, `https://www.linkedin.com/company/${slug}`)
             : Promise.resolve(null),
-          tofler: TOFLER_COLLECTOR
+          tofler: usableCollector(TOFLER_COLLECTOR)
             ? scrapeUrl(TOFLER_COLLECTOR, `https://www.tofler.in/${slug}`)
             : Promise.resolve(null)
         };
@@ -84,4 +84,8 @@ function serializeCollectorResult(result: unknown): string | null {
     return null;
   }
   return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+}
+
+function usableCollector(collectorId: string | undefined): collectorId is string {
+  return Boolean(collectorId && !collectorId.includes("xxxxxxxx"));
 }

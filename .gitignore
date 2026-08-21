@@ -6,6 +6,9 @@ node_modules/
 .env.local
 .env.*.local
 
+# MCP configs that may contain API tokens
+.cursor/mcp.json
+
 # Build output
 .next/
 out/
