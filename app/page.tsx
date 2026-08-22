@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowRight, BarChart3, Globe2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { PipelineProgress } from "@/components/PipelineProgress";
-import type { AnalyzeResponse } from "@/lib/types";
+import { PipelineProgress, stageNumberFromName } from "@/components/PipelineProgress";
+import type { AnalyzeErrorResponse, AnalyzeResponse } from "@/lib/types";
 
 export default function Home() {
   const router = useRouter();
@@ -13,28 +13,13 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [currentStage, setCurrentStage] = useState(1);
   const [completedStages, setCompletedStages] = useState<number[]>([]);
+  const [failedStage, setFailedStage] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isRunning) {
-      return;
-    }
-
-    const maxStage = includeSentiment ? 8 : 7;
-    const interval = window.setInterval(() => {
-      setCurrentStage((stage) => Math.min(stage + 1, maxStage));
-      setCompletedStages((stages) => {
-        const next = Math.min(stages.length + 1, maxStage - 1);
-        return Array.from({ length: next }, (_, index) => index + 1);
-      });
-    }, 1100);
-
-    return () => window.clearInterval(interval);
-  }, [includeSentiment, isRunning]);
 
   async function runAnalysis(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setFailedStage(null);
     setIsRunning(true);
     setCurrentStage(1);
     setCompletedStages([]);
@@ -46,12 +31,16 @@ export default function Home() {
         body: JSON.stringify({ companyUrl, includeSentiment })
       });
 
+      const payload = (await response.json()) as AnalyzeResponse & AnalyzeErrorResponse;
+
       if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
+        setCompletedStages(payload.completedStages ?? []);
+        const failed = stageNumberFromName(payload.failedStage);
+        setFailedStage(failed);
+        setCurrentStage(failed ?? 1);
         throw new Error(payload.error ?? "Analysis failed");
       }
 
-      const payload = (await response.json()) as AnalyzeResponse;
       window.localStorage.setItem("facts:last-analysis", JSON.stringify(payload));
       setCompletedStages(payload.completedStages);
       setCurrentStage(includeSentiment ? 8 : 7);
@@ -139,6 +128,7 @@ export default function Home() {
           <PipelineProgress
             completedStages={completedStages}
             currentStage={currentStage}
+            failedStage={failedStage}
             includeSentiment={includeSentiment}
           />
         </div>

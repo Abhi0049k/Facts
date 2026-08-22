@@ -1,8 +1,7 @@
-import { scrapeUrl } from "@/lib/clients/brightdata";
+import { canScrapeCompanyPages, scrapePage } from "@/lib/clients/brightdata";
 import { logger } from "@/lib/clients/logger";
 import { PipelineStageError } from "@/lib/types";
 
-const COMPANY_SITE_COLLECTOR = process.env.BRIGHT_DATA_COLLECTOR_COMPANY_SITE;
 const STAGE = "Stage1-Ingest";
 
 export async function ingestUserCompany(companyUrl: string): Promise<string> {
@@ -10,37 +9,30 @@ export async function ingestUserCompany(companyUrl: string): Promise<string> {
   logger.stageStart(STAGE, "scraping company site", { url: companyUrl });
 
   try {
-    if (!COMPANY_SITE_COLLECTOR) {
-      throw new PipelineStageError(
-        STAGE,
-        "BRIGHT_DATA_COLLECTOR_COMPANY_SITE is not set - create the Bright Data company-site collector and add its c_... ID to .env.local"
-      );
+    if (!process.env.BRIGHT_DATA_API_TOKEN?.trim()) {
+      throw new PipelineStageError(STAGE, "BRIGHT_DATA_API_TOKEN is not set");
     }
-    if (COMPANY_SITE_COLLECTOR.includes("xxxxxxxx")) {
+    if (!(await canScrapeCompanyPages())) {
       throw new PipelineStageError(
         STAGE,
-        "BRIGHT_DATA_COLLECTOR_COMPANY_SITE is still a placeholder - replace it with the c_... Collector ID from Bright Data Scraper Studio"
+        "Set BRIGHT_DATA_WEB_UNLOCKER_ZONE (Web Unlocker zone name) or BRIGHT_DATA_COLLECTOR_COMPANY_SITE (gd_… dataset or c_… collector) in .env.local"
       );
     }
 
-    const result = await scrapeUrl(COMPANY_SITE_COLLECTOR, companyUrl);
-    if (!result) {
+    const rawContent = await scrapePage(companyUrl);
+    if (!rawContent) {
       throw new PipelineStageError(
         STAGE,
-        `Failed to scrape ${companyUrl} - check Bright Data collector and API token`
+        `Failed to scrape ${companyUrl} — check the Bright Data API token and Web Unlocker zone`
       );
     }
 
     logger.stageComplete(STAGE, "scraping company site", { durationMs: Date.now() - start });
-    return serializeCollectorResult(result);
+    return rawContent;
   } catch (error) {
     if (error instanceof PipelineStageError) {
       throw error;
     }
     throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
   }
-}
-
-function serializeCollectorResult(result: unknown): string {
-  return typeof result === "string" ? result : JSON.stringify(result, null, 2);
 }

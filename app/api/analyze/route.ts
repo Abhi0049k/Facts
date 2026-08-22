@@ -9,18 +9,27 @@ import { scrapeCompetitors } from "@/lib/pipeline/5-scrape-competitors";
 import { extractCompetitorProfiles } from "@/lib/pipeline/6-extract";
 import { compareCompanies } from "@/lib/pipeline/7-compare";
 import { analyzeSentiment } from "@/lib/pipeline/8-sentiment";
-import { PipelineStageError, type AnalyzeRequest, type AnalyzeResponse, type PipelineState } from "@/lib/types";
+import {
+  PipelineStageError,
+  type AnalyzeErrorResponse,
+  type AnalyzeRequest,
+  type AnalyzeResponse,
+  type PipelineState
+} from "@/lib/types";
+
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   const runId = randomUUID().slice(0, 8);
   const startTime = Date.now();
+  const completedStages: number[] = [];
 
   try {
     const body = (await request.json()) as AnalyzeRequest;
     const companyUrl = normalizeCompanyUrl(body.companyUrl);
     if (!companyUrl) {
       return NextResponse.json(
-        { error: "Enter a valid company URL, for example https://company.com" },
+        { error: "Enter a valid company URL, for example https://company.com" } satisfies AnalyzeErrorResponse,
         { status: 400 }
       );
     }
@@ -38,7 +47,6 @@ export async function POST(request: Request) {
       comparison: null,
       sentiment: null
     };
-    const completedStages: number[] = [];
 
     const rawContent = await ingestUserCompany(companyUrl);
     completedStages.push(1);
@@ -73,10 +81,13 @@ export async function POST(request: Request) {
   } catch (error) {
     const failedStage = error instanceof PipelineStageError ? error.stage : "unknown";
     logger.pipelineFailed(runId, failedStage, error instanceof Error ? error.message : String(error));
-    return NextResponse.json(
-      { runId, error: error instanceof Error ? error.message : "Pipeline failed" },
-      { status: 500 }
-    );
+    const payload: AnalyzeErrorResponse = {
+      runId,
+      error: error instanceof Error ? error.message : "Pipeline failed",
+      failedStage,
+      completedStages
+    };
+    return NextResponse.json(payload, { status: 500 });
   }
 }
 

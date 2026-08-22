@@ -66,6 +66,13 @@ export interface AnalyzeResponse {
   completedStages: number[];
 }
 
+export interface AnalyzeErrorResponse {
+  runId?: string;
+  error: string;
+  failedStage?: string;
+  completedStages?: number[];
+}
+
 export class PipelineStageError extends Error {
   constructor(
     public stage: string,

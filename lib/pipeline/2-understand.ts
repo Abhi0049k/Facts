@@ -40,9 +40,25 @@ export async function understandCompany(
       `Domain: ${domain}
 
 Website content:
-${rawContent}
+${rawContent.slice(0, 24_000)}
 
-Extract: company name, domain, category/segment, offerings summary, optional founders, optional available stats, data availability flags, and a generic industry-framed searchIntentPhrase describing the business model for competitor discovery. The searchIntentPhrase must not include the company's own name.`,
+Return a JSON object with exactly these keys:
+{
+  "name": "string",
+  "domain": "${domain}",
+  "category": "string",
+  "offeringsSummary": "string",
+  "searchIntentPhrase": "string — industry/business-model phrase, no company name",
+  "founders": ["string"] ,
+  "stats": {
+    "fundingTotal": "string optional",
+    "employeeCount": "string optional",
+    "revenueEstimate": "string optional",
+    "foundedYear": 2020,
+    "dataAvailability": { "funding": false, "revenue": false, "employeeCount": false }
+  }
+}
+Omit optional stats and founders when the website does not support them. Never invent numbers.`,
       CompanyProfileSchema
     );
 

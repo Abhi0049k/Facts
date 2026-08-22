@@ -62,10 +62,11 @@ Create a `.env.local` file using `.env.example` as the template:
 ```bash
 TAVILY_API_KEY=
 BRIGHT_DATA_API_TOKEN=
-BRIGHT_DATA_COLLECTOR_COMPANY_SITE=c_xxxxxxxxxxxxxxxx
-BRIGHT_DATA_COLLECTOR_CRUNCHBASE=c_xxxxxxxxxxxxxxxx
-BRIGHT_DATA_COLLECTOR_LINKEDIN=c_xxxxxxxxxxxxxxxx
-BRIGHT_DATA_COLLECTOR_TOFLER=c_xxxxxxxxxxxxxxxx
+BRIGHT_DATA_WEB_UNLOCKER_ZONE=web_unlocker1
+BRIGHT_DATA_COLLECTOR_COMPANY_SITE=
+BRIGHT_DATA_COLLECTOR_CRUNCHBASE=gd_l1vijqt9jfj7olije
+BRIGHT_DATA_COLLECTOR_LINKEDIN=gd_l1vikfnt1wgvvqz95w
+BRIGHT_DATA_COLLECTOR_TOFLER=
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_MODEL=qwen3.5:9b
 ```
@@ -84,67 +85,50 @@ npm install
 npm run dev
 ```
 
-The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data requires a valid API token and collector IDs before the full pipeline can scrape real sites.
+The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data needs an API token plus a Web Unlocker zone (homepages) and/or dataset IDs (Crunchbase, LinkedIn).
 
-## Setting Up Bright Data Collectors
+## Setting up Bright Data
 
-Go to [Scraper Studio](https://brightdata.com/cp/scrapers) in the Bright Data control panel, or use the Bright Data CLI through `npx` so nothing needs to be installed globally:
+Facts uses three Bright Data products, routed by ID prefix:
 
-```bash
-npx -p @brightdata/cli bdata login
-npx -p @brightdata/cli bdata --version
-npx -p @brightdata/cli bdata scraper create <sample-url> "<what to extract>"
-```
+| Source | Env var | Default | API |
+| --- | --- | --- | --- |
+| Company homepages | `BRIGHT_DATA_WEB_UNLOCKER_ZONE` | your Unlocker zone name | `POST /request` (markdown) |
+| Company homepages (optional) | `BRIGHT_DATA_COLLECTOR_COMPANY_SITE` | empty | `gd_…` Datasets v3 or `c_…` Scraper Studio |
+| Crunchbase | `BRIGHT_DATA_COLLECTOR_CRUNCHBASE` | `gd_l1vijqt9jfj7olije` | Datasets v3 |
+| LinkedIn companies | `BRIGHT_DATA_COLLECTOR_LINKEDIN` | `gd_l1vikfnt1wgvvqz95w` | Datasets v3 |
+| Tofler (optional) | `BRIGHT_DATA_COLLECTOR_TOFLER` | empty | Datasets v3 or collector |
 
-Create four collectors, one per source type:
+1. Create an API key under [account users](https://brightdata.com/cp/setting/users) and set `BRIGHT_DATA_API_TOKEN`.
+2. Create a [Web Unlocker](https://brightdata.com/cp/web_access) zone. Copy the **zone name** from the Overview tab into `BRIGHT_DATA_WEB_UNLOCKER_ZONE`, or leave it blank and Facts will use the first active `unblocker` zone on the account.
+3. Leave the Crunchbase and LinkedIn dataset IDs as the published library scrapers, or replace them with your own `c_…` Scraper Studio collectors.
+4. Leave `BRIGHT_DATA_COLLECTOR_TOFLER` empty unless you need India filings.
 
-| Collector | Sample URL | Extraction description |
-| --- | --- | --- |
-| Company site collector | Any company homepage | Extract company name, tagline, list of products/services, about text, and any team/founders page links |
-| Crunchbase collector | A Crunchbase organization page | Extract company name, funding total, funding rounds, investors, founded year |
-| LinkedIn collector | A LinkedIn company page | Extract company name, employee count range, industry, headquarters |
-| Tofler collector | A Tofler company page | Extract company name, revenue, profit, filing year, CIN |
+Do not put placeholder `c_xxxxxxxxxxxxxxxx` values in `.env.local`. Next.js loads `.env.local` over `.env`, so placeholders hide real IDs.
 
-Review the AI-inferred schema for each collector before confirming. This is the checkpoint for catching misaligned fields before the app sends runtime inputs.
+`gd_…` IDs call `POST /datasets/v3/scrape`. If Bright Data returns HTTP 202, the client polls `/datasets/v3/progress/{snapshot_id}` and downloads `/datasets/v3/snapshot/{snapshot_id}`. `c_…` IDs use `/dca/trigger` and `/dca/dataset`. The client never sends a collector ID to the Datasets API.
 
-The runtime integration sends each user-provided URL to Bright Data as a default Scraper Studio input object:
+Stage 5 looks up canonical Crunchbase/LinkedIn URLs with Tavily when a key is set, then batches those URLs (up to 20) in one dataset request. Homepages go through Web Unlocker with a concurrency limit of 3.
 
-```json
-[
-  { "url": "https://company.com/" }
-]
-```
-
-Make sure each collector accepts a `url` input field. Bright Data returns a `collection_id` from `/dca/trigger`; the app treats that value as the snapshot ID and polls `/dca/dataset?id=<snapshot_id>` until the JSON array is ready.
-
-Copy each resulting Collector ID (`c_...`) into `.env.local`:
-
-```bash
-BRIGHT_DATA_COLLECTOR_COMPANY_SITE=c_...
-BRIGHT_DATA_COLLECTOR_CRUNCHBASE=c_...
-BRIGHT_DATA_COLLECTOR_LINKEDIN=c_...
-BRIGHT_DATA_COLLECTOR_TOFLER=c_...
-```
-
-Collector generation typically takes 10-15 minutes per collector. Bright Data's self-healing means these collectors usually do not need to be rebuilt when target page layouts change.
-
-Before running the full pipeline, test the company-site collector:
+Before running the full pipeline, test homepage scraping:
 
 ```bash
 npm run test:brightdata
 ```
 
-This triggers the company-site collector against Kalvium's site by default, logs the raw result, and checks that the output can be serialized as Stage 2 input. Override the test URL with `BRIGHT_DATA_TEST_URL` if needed. The UI uses the same flow: the company URL entered in the form is posted to `/api/analyze`, normalized, and passed to Bright Data as the `url` input.
+This hits Kalvium by default (`BRIGHT_DATA_TEST_URL` to override), prints the markdown or JSON, and checks that Stage 2 can use it as `rawContent`.
+
+A Cursor MCP SSE URL (`.cursor/mcp.json`, gitignored) is only for the IDE agent. The Facts pipeline does not call MCP.
 
 ## Pipeline stage reference
 
 | Stage | Input | Output | External service |
 | --- | --- | --- | --- |
-| 1. Ingest User Company | Company URL | `rawContent: string` | Bright Data |
+| 1. Ingest User Company | Company URL | `rawContent: string` | Bright Data Web Unlocker |
 | 2. Understand Company | `rawContent` | `CompanyProfile` | LLM |
 | 3. Discover Competitors | `searchIntentPhrase` | `{ name, domain? }[]` | LLM + Tavily |
 | 4. Rank & Select Competitors | Raw candidates + `CompanyProfile` | `Competitor[]` max 5 | LLM |
-| 5. Scrape Competitors | Competitor domains | Raw content per competitor/source | Bright Data |
+| 5. Scrape Competitors | Competitor domains | Raw content per competitor/source | Unlocker + Datasets v3 |
 | 6. Extract Structured Data | Competitor source content | `CompanyProfile[]` | LLM |
 | 7. Comparison | User profile + competitor profiles | `ComparisonResult` | LLM |
 | 8. Sentiment Optional | Company name + domain | `SentimentResult[]` | Tavily + LLM |
