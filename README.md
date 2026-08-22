@@ -7,8 +7,11 @@ Facts is a Next.js full-stack web application for automated competitor discovery
 Facts uses a fixed-sequence pipeline, not an autonomous agent. Each stage takes a defined input, returns structured JSON, and writes to a shared `PipelineState`. This keeps behavior deterministic, controls external API cost, and makes failures easier to reason about.
 
 ```text
+0. Lookup (Postgres)
+   URL -> normalize domain -> Company + CompanySource cache
+        |
 1. Ingest User Company
-   URL -> Bright Data scrape -> rawContent
+   known info URLs or homepage -> Bright Data scrape -> rawContent
         |
 2. Understand Company
    rawContent -> LLM JSON -> CompanyProfile
@@ -51,6 +54,9 @@ facts/
 │   ├── clients/                    # Bright Data, Tavily, and LLM wrappers
 │   └── types.ts                    # Shared TypeScript schemas
 ├── components/                     # Dashboard cards, charts, progress, and tables
+├── prisma/                         # Company cache schema and migrations
+├── data/                           # Indian company CSV batches (imported into Postgres)
+├── scripts/                        # CSV import and Bright Data tests
 ├── public/
 │   └── screenshots/                # Placeholder screenshot assets
 ├── .env.example                    # Required environment variables
@@ -71,6 +77,9 @@ BRIGHT_DATA_COLLECTOR_LINKEDIN=gd_l1vikfnt1wgvvqz95w
 BRIGHT_DATA_COLLECTOR_TOFLER=
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_MODEL=llama3.2:latest
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres
 ```
 
 Local LLM prerequisites:
@@ -86,7 +95,14 @@ npm install
 npm run dev
 ```
 
-Open `/` and paste a company homepage. That sends you to `/dashboard?url=...`, where the pipeline runs. The dashboard shows each stage's output (including the scraped page). If stage 2 decides the URL is a person or not a company, discovery stops with a message. If it is a company, you can open `/results` after the run finishes.
+Open `/` and paste a company homepage. That sends you to `/dashboard?url=...`, where the pipeline runs. The dashboard shows each stage's output (including the scraped page). If the company is not in the Postgres cache, a dismissible banner explains that results use live discovery. If stage 2 decides the URL is a person or not a company, discovery stops with a message. If it is a company, you can open `/results` after the run finishes.
+
+Load company CSV batches into Supabase after Prisma migrate:
+
+```bash
+npx prisma migrate deploy
+npx tsx scripts/import-companies.ts data/indian_origin_organisations_batch_002.csv
+```
 
 ## App URLs
 
@@ -112,7 +128,8 @@ Shared chrome: `app/layout.tsx` (fonts, metadata), `components/SiteHeader.tsx`.
 ### Pipeline (one stage per file)
 
 - `lib/pipeline/run.ts`: ordered stages, emits start/complete payloads, stops after stage 2 when the page is not a company.
-- `lib/pipeline/1-ingest.ts`: visits the URL through Bright Data Web Unlocker. Output is page markdown/text.
+- `lib/pipeline/0-lookup.ts`: match the URL against `Company.primaryDomain` before scraping.
+- `lib/pipeline/1-ingest.ts`: scrapes known info URLs when lookup hits; otherwise the homepage via Bright Data.
 - `lib/pipeline/classify-site.ts`: URL heuristics (LinkedIn `/in/`, social profiles, Wikipedia) as a hint for stage 2.
 - `lib/pipeline/2-understand.ts`: LLM reads the scrape, sets `siteKind` (`company`, `personal_profile`, `not_a_company`), and only then builds a `CompanyProfile`.
 - `lib/pipeline/3-discover.ts`: candidate rivals from the local model plus optional Tavily.
@@ -120,14 +137,14 @@ Shared chrome: `app/layout.tsx` (fonts, metadata), `components/SiteHeader.tsx`.
 - `lib/pipeline/5-scrape-competitors.ts`: Unlocker homepages plus Crunchbase/LinkedIn/Tofler datasets.
 - `lib/pipeline/6-extract.ts`: competitor `CompanyProfile[]`.
 - `lib/pipeline/7-compare.ts`: overlap and gaps.
-- `lib/pipeline/8-sentiment.ts`: optional review search and scores.
+- `lib/pipeline/8-sentiment.ts`: known sentiment URLs from the database when present; otherwise Tavily. Empty verified list reports "No sentiment sources available for this company."
 
 ### Clients and UI helpers
 
 - `lib/clients/brightdata.ts`: Unlocker, Datasets v3, DCA collectors.
 - `lib/clients/llm.ts`: Ollama JSON calls.
 - `lib/clients/tavily.ts`: web search.
-- `lib/clients/logger.ts`: run-scoped stage logs.
+- `lib/clients/prisma.ts`: Prisma singleton for Stage 0 lookup.
 - `lib/clients/normalize-json.ts`: unwrap messy LLM lists.
 - `lib/pipeline-events.ts`: SSE event types (`stage`, `halted`, `done`, `error`).
 - `lib/client/read-analyze-stream.ts`: browser SSE parser.

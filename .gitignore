@@ -24,5 +24,8 @@ pnpm-debug.log*
 # TypeScript
 tsconfig.tsbuildinfo
 
-# Package lock intentionally excluded for this project
-package-lock.json
+# Excel working copies of the company batches
+data/*.xlsx
+
+# macOS
+.DS_Store

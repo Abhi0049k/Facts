@@ -11,6 +11,7 @@ type StageRecord = {
 };
 
 const TITLES: Record<number, string> = {
+  0: "Database lookup",
   1: "Page scrape",
   2: "Company check",
   3: "Rival candidates",
@@ -83,7 +84,13 @@ export function StageOutputList({
           <p className="font-mono text-[11px] font-medium text-coral">
             {failedStage ? `Step ${String(failedStage).padStart(2, "0")} failed` : "Run failed"}
           </p>
-          <h3 className="mt-1 text-base font-semibold text-ink">The model did not return a usable profile</h3>
+          <h3 className="mt-1 text-base font-semibold text-ink">
+            {error.toLowerCase().includes("no data could be found")
+              ? "No data could be found for this company"
+              : /lost connection|failed to fetch|local server|network/i.test(error)
+                ? "Could not reach the analysis server"
+                : "This run did not finish"}
+          </h3>
           <p className="mt-2 text-sm leading-6 text-ink">{error}</p>
           <p className="mt-2 text-sm text-muted">Earlier steps above are still valid. Run again from the URL field.</p>
         </article>
@@ -95,6 +102,48 @@ export function StageOutputList({
 function renderPayload(stage: number, payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return <p className="text-sm text-muted">No handoff for this step.</p>;
+  }
+
+  if (stage === 0) {
+    const data = payload as {
+      databaseMatch?: boolean;
+      domain?: string;
+      companyName?: string | null;
+      infoUrls?: Array<{ url: string; sourceType: string }>;
+      sentimentUrls?: Array<{ url: string; sourceType: string }>;
+    };
+    if (!data.databaseMatch) {
+      return (
+        <p className="text-sm leading-6 text-muted">
+          {data.domain ? `${data.domain} is not in the verified company list.` : "No database match."}{" "}
+          Live discovery will run instead.
+        </p>
+      );
+    }
+    return (
+      <div className="space-y-2 text-sm leading-6">
+        <p className="font-medium text-ink">
+          {data.companyName} ({data.domain})
+        </p>
+        <p className="text-muted">
+          {(data.infoUrls ?? []).length} info source{(data.infoUrls ?? []).length === 1 ? "" : "s"},{" "}
+          {(data.sentimentUrls ?? []).length} sentiment source
+          {(data.sentimentUrls ?? []).length === 1 ? "" : "s"}.
+        </p>
+        <ul className="space-y-1 font-mono text-xs text-muted">
+          {(data.infoUrls ?? []).map((source) => (
+            <li key={source.url}>
+              info / {source.sourceType}: {source.url}
+            </li>
+          ))}
+          {(data.sentimentUrls ?? []).map((source) => (
+            <li key={source.url}>
+              sentiment / {source.sourceType}: {source.url}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
   }
 
   if (stage === 1) {

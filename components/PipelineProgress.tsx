@@ -4,6 +4,7 @@ import { stageNumberFromName } from "@/lib/stage-number";
 export { stageNumberFromName };
 
 const stages = [
+  "Lookup",
   "Ingest",
   "Understand",
   "Discover",
@@ -27,12 +28,12 @@ export function PipelineProgress({
   completedStages = [],
   failedStage = null
 }: PipelineProgressProps) {
-  const visibleStages = includeSentiment ? stages : stages.slice(0, 7);
+  const visibleStages = includeSentiment ? stages : stages.slice(0, 8);
 
   return (
     <ol className="border-l border-line pl-5">
       {visibleStages.map((stage, index) => {
-        const number = index + 1;
+        const number = index;
         const failed = failedStage === number;
         const completed = completedStages.includes(number) && !failed;
         const active = currentStage === number && !completed && !failed;
@@ -57,7 +58,7 @@ export function PipelineProgress({
               ) : active ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                number
+                index
               )}
             </span>
             <p

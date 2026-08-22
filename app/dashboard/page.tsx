@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { PipelineProgress, stageNumberFromName } from "@/components/PipelineProgress";
 import { SiteHeader } from "@/components/SiteHeader";
+import { LimitedDataBanner } from "@/components/LimitedDataBanner";
 import { StageOutputList } from "@/components/StageOutputList";
 import { readAnalyzeStream } from "@/lib/client/read-analyze-stream";
 import type { AnalyzeResponse } from "@/lib/types";
@@ -20,7 +21,7 @@ function DashboardInner() {
   const [companyUrl, setCompanyUrl] = useState(urlFromQuery);
   const [includeSentiment, setIncludeSentiment] = useState(sentimentFromQuery);
   const [isRunning, setIsRunning] = useState(false);
-  const [currentStage, setCurrentStage] = useState(1);
+  const [currentStage, setCurrentStage] = useState(0);
   const [completedStages, setCompletedStages] = useState<number[]>([]);
   const [failedStage, setFailedStage] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -31,6 +32,7 @@ function DashboardInner() {
   const [stageOutputs, setStageOutputs] = useState<Array<{ stage: number; title: string; payload?: unknown }>>(
     []
   );
+  const [databaseMatch, setDatabaseMatch] = useState<boolean | null>(null);
   const runningRef = useRef(false);
 
   async function runAnalysis(nextUrl: string, nextSentiment: boolean) {
@@ -43,11 +45,12 @@ function DashboardInner() {
     setReportReady(false);
     setFailedStage(null);
     setIsRunning(true);
-    setCurrentStage(1);
+    setCurrentStage(0);
     setCompletedStages([]);
     setStageOutputs([]);
     setNotices([]);
-    setStatusMessage("Visiting the homepage...");
+    setDatabaseMatch(null);
+    setStatusMessage("Checking the company database...");
 
     try {
       const response = await fetch("/api/analyze", {
@@ -91,6 +94,12 @@ function DashboardInner() {
               ...current.filter((item) => item.stage !== event.stage),
               { stage: event.stage, title: event.message, payload: event.payload }
             ]);
+            if (event.stage === 0 && event.payload && typeof event.payload === "object") {
+              const payload = event.payload as { databaseMatch?: boolean };
+              if (typeof payload.databaseMatch === "boolean") {
+                setDatabaseMatch(payload.databaseMatch);
+              }
+            }
           }
           return;
         }
@@ -121,8 +130,12 @@ function DashboardInner() {
           finished = {
             runId: event.runId,
             state: event.state,
-            completedStages: event.completedStages
+            completedStages: event.completedStages,
+            databaseMatch: event.databaseMatch
           };
+          if (typeof event.databaseMatch === "boolean") {
+            setDatabaseMatch(event.databaseMatch);
+          }
           setCompletedStages(event.completedStages);
           setCurrentStage(nextSentiment ? 8 : 7);
           setStatusMessage("Briefing ready");
@@ -153,8 +166,10 @@ function DashboardInner() {
       const message =
         analysisError instanceof TypeError && analysisError.message === "Failed to fetch"
           ? "Lost connection to the local server. Restart npm run dev and try again. Do not stop the terminal while analysis is running."
-          : analysisError instanceof Error
-            ? analysisError.message
+            : analysisError instanceof Error
+            ? analysisError.message.toLowerCase().includes("failed to scrape")
+              ? "No data could be found for this company."
+              : analysisError.message
             : "Analysis failed";
       setError(message);
       setStatusMessage(null);
@@ -274,6 +289,12 @@ function DashboardInner() {
           {haltMessage ? (
             <div className="mt-5 rounded-lg border border-amber/40 bg-amber/10 p-4 text-sm leading-6 text-ink">
               {haltMessage}
+            </div>
+          ) : null}
+
+          {databaseMatch === false ? (
+            <div className="mt-5">
+              <LimitedDataBanner />
             </div>
           ) : null}
 

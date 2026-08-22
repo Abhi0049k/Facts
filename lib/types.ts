@@ -68,6 +68,7 @@ export interface AnalyzeResponse {
   completedStages: number[];
   halted?: boolean;
   haltMessage?: string;
+  databaseMatch?: boolean;
 }
 
 export interface AnalyzeErrorResponse {

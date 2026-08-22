@@ -1,4 +1,5 @@
 import { logger } from "@/lib/clients/logger";
+import { lookupCompany } from "@/lib/pipeline/0-lookup";
 import { ingestUserCompany } from "@/lib/pipeline/1-ingest";
 import { understandCompany } from "@/lib/pipeline/2-understand";
 import { discoverCompetitors } from "@/lib/pipeline/3-discover";
@@ -12,6 +13,7 @@ import { compactSourceText, readableScrape } from "@/lib/readable-scrape";
 import type { AnalyzeResponse, CompetitorScrapeResult, PipelineState } from "@/lib/types";
 
 const STAGE_LABELS: Record<number, string> = {
+  0: "Lookup",
   1: "Ingest site",
   2: "Understand company",
   3: "Discover competitors",
@@ -44,8 +46,22 @@ export async function runPipeline(
     includeSentiment: input.includeSentiment
   });
 
+  await emitStage(onEvent, 0, "start");
+  const lookup = await lookupCompany(input.companyUrl);
+  completedStages.push(0);
+  await emitStage(onEvent, 0, "complete", {
+    databaseMatch: lookup.found,
+    domain: lookup.domain,
+    companyName: lookup.found ? lookup.companyName : null,
+    infoUrls: lookup.found ? lookup.infoUrls : [],
+    sentimentUrls: lookup.found ? lookup.sentimentUrls : []
+  });
+
   await emitStage(onEvent, 1, "start");
-  const rawContent = await ingestUserCompany(input.companyUrl);
+  const rawContent = await ingestUserCompany(
+    input.companyUrl,
+    lookup.found ? lookup.infoUrls : []
+  );
   completedStages.push(1);
   await emitStage(onEvent, 1, "complete", {
     url: input.companyUrl,
@@ -84,7 +100,7 @@ export async function runPipeline(
       },
       completedStages
     });
-    return { runId: input.runId, state, completedStages, halted: true, haltMessage: message };
+    return { runId: input.runId, state, completedStages, halted: true, haltMessage: message, databaseMatch: lookup.found };
   }
 
   state.userCompany = understood.profile;
@@ -134,13 +150,17 @@ export async function runPipeline(
 
   if (input.includeSentiment) {
     await emitStage(onEvent, 8, "start");
-    state.sentiment = await analyzeSentiment([state.userCompany, ...state.competitorProfiles]);
+    state.sentiment = await analyzeSentiment([state.userCompany, ...state.competitorProfiles], {
+      userDomain: lookup.domain || state.userCompany.domain,
+      knownSentimentUrls: lookup.found ? lookup.sentimentUrls : [],
+      databaseMatch: lookup.found
+    });
     completedStages.push(8);
     await emitStage(onEvent, 8, "complete", { sentiment: state.sentiment });
   }
 
   logger.pipelineComplete(input.runId, Date.now() - startTime, { completedStages });
-  return { runId: input.runId, state, completedStages };
+  return { runId: input.runId, state, completedStages, databaseMatch: lookup.found };
 }
 
 async function emitStage(

@@ -1,12 +1,21 @@
 import { canScrapeCompanyPages, scrapePage } from "@/lib/clients/brightdata";
 import { failStage, logger } from "@/lib/clients/logger";
+import type { KnownSource } from "@/lib/normalize-domain";
 import { PipelineStageError } from "@/lib/types";
 
 const STAGE = "Stage1-Ingest";
 
-export async function ingestUserCompany(companyUrl: string): Promise<string> {
+export async function ingestUserCompany(
+  companyUrl: string,
+  infoUrls: KnownSource[] = []
+): Promise<string> {
   const start = Date.now();
-  logger.stageStart(STAGE, "scraping company homepage to markdown/JSON", { url: companyUrl });
+  const targets = infoUrls.length ? infoUrls.map((source) => source.url) : [companyUrl];
+  logger.stageStart(STAGE, "scraping company pages to markdown/JSON", {
+    url: companyUrl,
+    targets: targets.length,
+    fromDatabase: infoUrls.length > 0
+  });
 
   try {
     if (!process.env.BRIGHT_DATA_API_TOKEN?.trim()) {
@@ -19,20 +28,28 @@ export async function ingestUserCompany(companyUrl: string): Promise<string> {
       );
     }
 
-    const rawContent = await scrapePage(companyUrl);
-    if (!rawContent) {
-      throw new PipelineStageError(
-        STAGE,
-        `Failed to scrape ${companyUrl}. Check the Bright Data API token and Web Unlocker zone.`
-      );
+    const parts: string[] = [];
+    for (const target of targets) {
+      const rawContent = await scrapePage(target);
+      if (rawContent) {
+        parts.push(`# Source: ${target}\n\n${rawContent}`);
+      } else {
+        logger.stageWarn(STAGE, "scrape returned empty", { target });
+      }
     }
 
-    logger.stageComplete(STAGE, "homepage scrape ready for Stage 2", {
+    if (!parts.length) {
+      throw new PipelineStageError(STAGE, `No data could be found for this company (${companyUrl}).`);
+    }
+
+    const combined = parts.join("\n\n");
+    logger.stageComplete(STAGE, "page scrape ready for Stage 2", {
       durationMs: Date.now() - start,
-      chars: rawContent.length,
-      preview: rawContent.slice(0, 180)
+      chars: combined.length,
+      sources: parts.length,
+      preview: combined.slice(0, 180)
     });
-    return rawContent;
+    return combined;
   } catch (error) {
     failStage(STAGE, error, { url: companyUrl });
   }

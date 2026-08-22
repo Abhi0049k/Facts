@@ -69,7 +69,8 @@ export async function POST(request: Request) {
                 type: "done",
                 runId: result.runId ?? runId,
                 state: result.state,
-                completedStages: result.completedStages
+                completedStages: result.completedStages,
+                databaseMatch: result.databaseMatch
               });
             }
           } catch (error) {
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
             send({
               type: "error",
               runId,
-              error: error instanceof Error ? error.message : "Pipeline failed",
+              error: publicErrorMessage(error),
               failedStage,
               completedStages
             });
@@ -112,6 +113,14 @@ export async function POST(request: Request) {
       "X-Accel-Buffering": "no"
     }
   });
+}
+
+function publicErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Pipeline failed";
+  if (/no data could be found/i.test(message) || /failed to scrape/i.test(message)) {
+    return "No data could be found for this company.";
+  }
+  return message;
 }
 
 function normalizeCompanyUrl(input: unknown): string | null {

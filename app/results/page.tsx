@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { CompanyCard } from "@/components/CompanyCard";
 import { ComparisonChart, ServicesMatrix } from "@/components/ComparisonChart";
 import { ComparisonTable } from "@/components/ComparisonTable";
+import { LimitedDataBanner } from "@/components/LimitedDataBanner";
 import type { AnalyzeResponse, SentimentResult } from "@/lib/types";
 
 export default function ResultsPage() {
@@ -52,6 +53,11 @@ export default function ResultsPage() {
     <div className="min-h-[100dvh] bg-paper">
       <SiteHeader compact />
       <main className="mx-auto w-full max-w-7xl px-5 py-6">
+      {analysis?.databaseMatch === false ? (
+        <div className="mb-5">
+          <LimitedDataBanner />
+        </div>
+      ) : null}
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Intelligence report</h1>

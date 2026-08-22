@@ -16,7 +16,7 @@ export type PipelineStreamEvent =
       payload?: unknown;
       completedStages: number[];
     }
-  | { type: "done"; runId: string; state: PipelineState; completedStages: number[] }
+  | { type: "done"; runId: string; state: PipelineState; completedStages: number[]; databaseMatch?: boolean }
   | {
       type: "error";
       runId: string;
