@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { PipelineProgress, stageNumberFromName } from "@/components/PipelineProgress";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -14,6 +14,7 @@ import type { AnalyzeResponse } from "@/lib/types";
 const autoStartedKeys = new Set<string>();
 
 function DashboardInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const urlFromQuery = searchParams.get("url")?.trim() ?? "";
   const sentimentFromQuery = searchParams.get("sentiment") === "1";
@@ -34,6 +35,12 @@ function DashboardInner() {
   );
   const [databaseMatch, setDatabaseMatch] = useState<boolean | null>(null);
   const runningRef = useRef(false);
+
+  useEffect(() => {
+    if (!urlFromQuery) {
+      router.replace("/");
+    }
+  }, [router, urlFromQuery]);
 
   async function runAnalysis(nextUrl: string, nextSentiment: boolean) {
     if (runningRef.current) {
@@ -206,6 +213,15 @@ function DashboardInner() {
   }
 
   const runLabel = error ? "Stopped" : haltMessage ? "Not a company" : reportReady ? "Ready" : isRunning ? "Running" : "Idle";
+
+  if (!urlFromQuery) {
+    return (
+      <div className="min-h-[100dvh] bg-paper text-ink">
+        <SiteHeader compact />
+        <p className="px-5 py-10 text-sm text-muted">Taking you to the home page...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-paper text-ink">

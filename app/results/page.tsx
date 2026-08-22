@@ -5,8 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { CompanyCard } from "@/components/CompanyCard";
-import { ComparisonChart, ServicesMatrix } from "@/components/ComparisonChart";
-import { ComparisonTable } from "@/components/ComparisonTable";
+import { ComparisonChart } from "@/components/ComparisonChart";
 import { LimitedDataBanner } from "@/components/LimitedDataBanner";
 import type { AnalyzeResponse, SentimentResult } from "@/lib/types";
 
@@ -62,7 +61,7 @@ export default function ResultsPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Intelligence report</h1>
           <p className="mt-1 text-sm text-muted">
-            {companies.length} companies compared across offerings, public stats, and market gaps.
+            {companies.length} companies. Briefing is a markdown profile dump; overlap scoring is skipped.
           </p>
         </div>
         <button
@@ -85,9 +84,20 @@ export default function ResultsPage() {
       </section>
 
       <section className="space-y-6 pb-6">
+        {comparison.markdown ? (
+          <article className="overflow-hidden rounded-2xl border border-line bg-panel shadow-panel">
+            <div className="border-b border-line px-6 py-4">
+              <h2 className="font-semibold text-ink">Company briefing</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                Extracted profile fields as markdown. Service overlap and gap criteria are not scored.
+              </p>
+            </div>
+            <pre className="overflow-x-auto whitespace-pre-wrap px-6 py-5 font-mono text-[13px] leading-6 text-ink">
+              {comparison.markdown}
+            </pre>
+          </article>
+        ) : null}
         <ComparisonChart comparison={comparison} />
-        <ServicesMatrix comparison={comparison} />
-        <ComparisonTable comparison={comparison} />
       </section>
 
       {sentiment ? <SentimentSection sentiment={sentiment} /> : null}

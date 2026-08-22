@@ -71,7 +71,9 @@ export async function runPipeline(
   });
 
   await emitStage(onEvent, 2, "start");
-  const understood = await understandCompany(rawContent, input.companyUrl);
+  const understood = await understandCompany(rawContent, input.companyUrl, {
+    knownName: lookup.found ? lookup.companyName : undefined
+  });
   completedStages.push(2);
   await emitStage(onEvent, 2, "complete", {
     siteKind: understood.siteKind,
@@ -144,8 +146,7 @@ export async function runPipeline(
   state.comparison = await compareCompanies(state.userCompany, state.competitorProfiles);
   completedStages.push(7);
   await emitStage(onEvent, 7, "complete", {
-    serviceOverlap: state.comparison.serviceOverlap,
-    gaps: state.comparison.gaps
+    markdown: state.comparison.markdown
   });
 
   if (input.includeSentiment) {

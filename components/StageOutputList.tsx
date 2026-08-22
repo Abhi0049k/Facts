@@ -18,7 +18,7 @@ const TITLES: Record<number, string> = {
   4: "Kept for scrape",
   5: "Rival sources",
   6: "Rival profiles",
-  7: "Overlap",
+  7: "Company briefing",
   8: "Reviews"
 };
 
@@ -249,35 +249,11 @@ function renderPayload(stage: number, payload: unknown) {
   }
 
   if (stage === 7) {
-    const data = payload as {
-      serviceOverlap?: Array<{ service: string; companies: string[] }>;
-      gaps?: Array<{ company: string; missingRelativeToUser: string[] }>;
-    };
+    const data = payload as { markdown?: string };
     return (
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
-          <h4 className="text-sm font-semibold text-ink">Shared offerings</h4>
-          <ul className="mt-2 space-y-2">
-            {(data.serviceOverlap ?? []).map((row) => (
-              <li className="text-sm leading-6" key={row.service}>
-                <span className="font-medium text-ink">{row.service}</span>
-                <span className="text-muted"> {row.companies.join(", ")}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h4 className="text-sm font-semibold text-ink">Gaps vs you</h4>
-          <ul className="mt-2 space-y-2">
-            {(data.gaps ?? []).map((row) => (
-              <li className="text-sm leading-6" key={row.company}>
-                <span className="font-medium text-ink">{row.company}</span>
-                <span className="text-muted"> missing {row.missingRelativeToUser.join(", ")}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[13px] leading-6 text-ink">
+        {data.markdown?.trim() || "No company briefing."}
+      </pre>
     );
   }
 

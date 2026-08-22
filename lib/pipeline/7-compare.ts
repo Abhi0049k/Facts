@@ -1,78 +1,66 @@
-import { z } from "zod";
-import { failStage, logger } from "@/lib/clients/logger";
-import { structuredCall } from "@/lib/clients/llm";
+import { logger } from "@/lib/clients/logger";
 import { type CompanyProfile, type ComparisonResult } from "@/lib/types";
 
 const STAGE = "Stage7-Compare";
-
-const CompanyProfileSchema = z.object({
-  name: z.string(),
-  domain: z.string(),
-  category: z.string(),
-  offeringsSummary: z.string(),
-  searchIntentPhrase: z.string().optional(),
-  founders: z.array(z.string()).optional(),
-  stats: z.object({
-    fundingTotal: z.string().optional(),
-    employeeCount: z.string().optional(),
-    revenueEstimate: z.string().optional(),
-    foundedYear: z.number().int().optional(),
-    dataAvailability: z.object({
-      funding: z.boolean(),
-      revenue: z.boolean(),
-      employeeCount: z.boolean()
-    })
-  })
-});
-
-const ComparisonResultSchema = z.object({
-  userCompany: CompanyProfileSchema,
-  competitors: z.array(CompanyProfileSchema),
-  serviceOverlap: z.array(
-    z.object({
-      service: z.string(),
-      companies: z.array(z.string())
-    })
-  ),
-  gaps: z.array(
-    z.object({
-      company: z.string(),
-      missingRelativeToUser: z.array(z.string())
-    })
-  )
-});
 
 export async function compareCompanies(
   userCompany: CompanyProfile,
   competitors: CompanyProfile[]
 ): Promise<ComparisonResult> {
   const start = Date.now();
-  logger.stageStart(STAGE, "comparing companies", { competitors: competitors.length });
+  logger.stageStart(STAGE, "writing company briefing markdown", { competitors: competitors.length });
 
-  try {
-    const comparison = await structuredCall(
-      STAGE,
-      "You produce structured competitor comparison results from supplied company profiles. Use only supplied profile evidence; do not invent stats or unsupported product claims.",
-      `Generate a ComparisonResult JSON object for this user company and competitors.
+  const markdown = formatCompaniesMarkdown(userCompany, competitors);
 
-User company:
-${JSON.stringify(userCompany, null, 2)}
+  logger.stageComplete(STAGE, "company briefing ready", {
+    durationMs: Date.now() - start,
+    competitorCount: competitors.length,
+    chars: markdown.length
+  });
 
-Competitors:
-${JSON.stringify(competitors, null, 2)}
+  return {
+    userCompany,
+    competitors,
+    serviceOverlap: [],
+    gaps: [],
+    markdown
+  };
+}
 
-Include serviceOverlap rows and feature gaps relative to the user company.`,
-      ComparisonResultSchema
-    );
+function formatCompaniesMarkdown(userCompany: CompanyProfile, competitors: CompanyProfile[]): string {
+  const sections = [
+    "# Company briefing",
+    "",
+    "Profiles below come from earlier extract steps. Overlap and gap scoring is skipped.",
+    "",
+    formatOneCompany(userCompany, "Your company"),
+    ...competitors.map((company, index) => formatOneCompany(company, `Competitor ${index + 1}`))
+  ];
+  return sections.join("\n").trim() + "\n";
+}
 
-    logger.stageComplete(STAGE, "market comparison ready", {
-      durationMs: Date.now() - start,
-      competitorCount: comparison.competitors.length,
-      overlapRows: comparison.serviceOverlap.length,
-      gapRows: comparison.gaps.length
-    });
-    return comparison;
-  } catch (error) {
-    failStage(STAGE, error, { competitors: competitors.length, userCompany: userCompany.name });
+function formatOneCompany(company: CompanyProfile, heading: string): string {
+  const stats = company.stats;
+  const lines = [
+    `## ${heading}: ${company.name}`,
+    "",
+    `- **Domain:** ${company.domain}`,
+    `- **Category:** ${company.category || "unknown"}`,
+    `- **Offerings:** ${company.offeringsSummary || "not listed"}`
+  ];
+
+  if (company.founders?.length) {
+    lines.push(`- **Founders:** ${company.founders.join(", ")}`);
   }
+  if (stats.foundedYear) {
+    lines.push(`- **Founded:** ${stats.foundedYear}`);
+  }
+  lines.push(`- **Funding:** ${stats.fundingTotal || "not listed"}`);
+  lines.push(`- **Employees:** ${stats.employeeCount || "not listed"}`);
+  lines.push(`- **Revenue:** ${stats.revenueEstimate || "not listed"}`);
+  if (company.searchIntentPhrase) {
+    lines.push(`- **Search phrase:** ${company.searchIntentPhrase}`);
+  }
+  lines.push("");
+  return lines.join("\n");
 }
