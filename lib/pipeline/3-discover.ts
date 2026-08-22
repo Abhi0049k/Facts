@@ -27,7 +27,9 @@ export async function discoverCompetitors(
       "You identify likely competitors from model knowledge only. Do not browse or rely on search results in this step.",
       `List companies that compete with a business described as: "${profile.searchIntentPhrase}".
 
-Exclude ${profile.name}. Return a JSON array with name and optional domain.`,
+Exclude ${profile.name}. Return a JSON array at the top level, for example:
+[{"name":"Competitor Inc","domain":"competitor.com"}]
+Do not wrap the array in an object.`,
       CompetitorCandidateSchema
     );
 

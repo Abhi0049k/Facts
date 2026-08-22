@@ -42,7 +42,8 @@ export async function analyzeSentiment(companies: CompanyProfile[]): Promise<Sen
       `Analyze sentiment for each company from these source bundles:
 ${JSON.stringify(sourceBundles, null, 2)}
 
-Return a SentimentResult array in the same company order.`,
+Return a SentimentResult JSON array at the top level, in the same company order.
+Do not wrap the array in an object.`,
       SentimentResultSchema
     );
 

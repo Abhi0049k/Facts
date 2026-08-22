@@ -68,15 +68,14 @@ BRIGHT_DATA_COLLECTOR_CRUNCHBASE=gd_l1vijqt9jfj7olije
 BRIGHT_DATA_COLLECTOR_LINKEDIN=gd_l1vikfnt1wgvvqz95w
 BRIGHT_DATA_COLLECTOR_TOFLER=
 OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=qwen3.5:9b
+LLM_MODEL=llama3.2:latest
 ```
 
 Local LLM prerequisites:
 
 - Install Ollama and keep it running locally with `ollama serve` on the default port `11434`.
-- Use Ollama `0.17.4` or newer. Qwen 3.5 requires the Gated DeltaNet architecture support added in that version.
-- Pull the recommended local model with `ollama pull qwen3.5:9b`.
-- Use `qwen3.5:27b` for better structured-output reliability if the machine has 16GB+ VRAM, or `qwen3.5:4b` for lighter hardware.
+- Pull the default model with `ollama pull llama3.2:latest`.
+- Override `LLM_MODEL` in `.env.local` if you prefer another local tag.
 
 Then install dependencies and run the app:
 

@@ -3,23 +3,29 @@ import { z } from "zod";
 import { logger } from "./logger";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const MODEL_NAME = process.env.LLM_MODEL || "qwen3.5:9b";
 
-const llm = new ChatOllama({
-  baseUrl: OLLAMA_BASE_URL,
-  model: MODEL_NAME,
-  temperature: 0,
-  format: "json",
-  think: false
-});
+function modelName(): string {
+  return process.env.LLM_MODEL?.trim() || "llama3.2:latest";
+}
+
+function getLlm() {
+  return new ChatOllama({
+    baseUrl: OLLAMA_BASE_URL,
+    model: modelName(),
+    temperature: 0,
+    format: "json",
+    think: false
+  });
+}
 
 const JSON_ONLY_INSTRUCTION = `Respond with a single JSON value only (object or array).
-No markdown, no code fences, no headings, no commentary, no <think> blocks.`;
+No markdown, no code fences, no headings, no commentary, no <think> blocks.
+If the schema is a list, return a JSON array at the top level — not an object wrapper.`;
 
 /**
- * Calls the local Qwen model and validates the response against a Zod schema.
- * Qwen 3.5 often emits thinking or markdown; we force JSON mode, extract a JSON
- * value if mixed text leaks through, and retry once on parse/schema failure.
+ * Calls the local Ollama model and validates the response against a Zod schema.
+ * Models often wrap arrays as {"competitors":[...]}; we unwrap those before validate,
+ * force JSON mode, extract JSON from mixed text, and retry once on failure.
  */
 export async function structuredCall<T>(
   stageName: string,
@@ -28,7 +34,8 @@ export async function structuredCall<T>(
   schema: z.ZodSchema<T>
 ): Promise<T> {
   const start = Date.now();
-  logger.stageStart(stageName, "LLM call", { model: MODEL_NAME, format: "json" });
+  const model = modelName();
+  logger.stageStart(stageName, "LLM call", { model, format: "json" });
 
   const messages: { role: "system" | "user"; content: string }[] = [
     { role: "system", content: `${systemPrompt}\n\n${JSON_ONLY_INSTRUCTION}` },
@@ -36,6 +43,7 @@ export async function structuredCall<T>(
   ];
 
   let lastError: Error | null = null;
+  const llm = getLlm();
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     let rawText = "";
@@ -48,7 +56,7 @@ export async function structuredCall<T>(
         preview: rawText.slice(0, 240)
       });
 
-      const parsed = extractJson(rawText);
+      const parsed = coerceForSchema(extractJson(rawText), schema);
       const validated = schema.safeParse(parsed);
       if (!validated.success) {
         lastError = new Error(`${stageName}: LLM output did not match expected schema`);
@@ -111,6 +119,45 @@ function messageText(content: unknown): string {
       .join("");
   }
   return JSON.stringify(content);
+}
+
+function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
+  if (schema.safeParse(parsed).success) {
+    return parsed;
+  }
+
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
+    const wrapperKeys = [
+      "competitors",
+      "candidates",
+      "companies",
+      "profiles",
+      "results",
+      "items",
+      "data",
+      "output"
+    ];
+    for (const key of wrapperKeys) {
+      if (key in record && schema.safeParse(record[key]).success) {
+        logger.debug("LLM", "unwrapped object key to match schema", { key });
+        return record[key];
+      }
+    }
+
+    const arrayValues = Object.values(record).filter(Array.isArray);
+    if (arrayValues.length === 1 && schema.safeParse(arrayValues[0]).success) {
+      logger.debug("LLM", "unwrapped sole array field to match schema");
+      return arrayValues[0];
+    }
+  }
+
+  if (Array.isArray(parsed) && parsed.length === 1 && schema.safeParse(parsed[0]).success) {
+    logger.debug("LLM", "unwrapped single-element array to match object schema");
+    return parsed[0];
+  }
+
+  return parsed;
 }
 
 export function extractJson(raw: string): unknown {

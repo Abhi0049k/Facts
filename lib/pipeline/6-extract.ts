@@ -36,7 +36,8 @@ export async function extractCompetitorProfiles(
     const profiles = await structuredCall(
       STAGE,
       "You extract structured company profiles from scraped competitor source content. Omit optional fields when evidence is unavailable. Never fabricate unavailable funding, revenue, employee count, founders, or founding year.",
-      `Extract one CompanyProfile object for each competitor in the supplied array.
+      `Return a JSON array of CompanyProfile objects at the top level, one per competitor.
+Do not wrap the array in an object.
 
 Prefer Crunchbase/Tracxn-style content for funding, LinkedIn content for employee count, and Tofler/MCA-style content for revenue. Set dataAvailability booleans based only on available evidence.
 

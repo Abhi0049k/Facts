@@ -35,7 +35,8 @@ ${JSON.stringify(userCompany, null, 2)}
 Candidates:
 ${JSON.stringify(withDomains, null, 2)}
 
-Return the top 5 as a JSON array of { "name": string, "domain": string }.`,
+Return the top 5 as a JSON array at the top level: [{"name":"...","domain":"..."}].
+Do not wrap the array in an object.`,
       RankedCompetitorsSchema
     );
 
