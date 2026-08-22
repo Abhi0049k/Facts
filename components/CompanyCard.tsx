@@ -9,16 +9,21 @@ interface CompanyCardProps {
 export function CompanyCard({ company, featured = false }: CompanyCardProps) {
   return (
     <article
-      className={`rounded-md border bg-panel p-5 shadow-panel ${
-        featured ? "border-accent" : "border-line"
+      className={`rounded-2xl border bg-panel p-6 shadow-panel transition ${
+        featured ? "border-2 border-accent" : "border-line"
       }`}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-ink">{company.name}</h3>
-          <p className="text-sm text-neutral-500">{company.domain}</p>
+          {featured ? (
+            <span className="mb-2 inline-block rounded-md bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent">
+              Target Company
+            </span>
+          ) : null}
+          <h3 className="text-xl font-semibold text-ink leading-none">{company.name}</h3>
+          <p className="mt-1 text-sm text-neutral-500">{company.domain}</p>
         </div>
-        <span className="rounded-md border border-line px-2 py-1 text-xs font-medium text-neutral-600">
+        <span className="rounded-md border border-line bg-paper px-2.5 py-1 text-xs font-medium text-neutral-600">
           {company.category}
         </span>
       </div>

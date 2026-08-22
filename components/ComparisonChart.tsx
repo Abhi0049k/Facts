@@ -47,39 +47,45 @@ export function ServicesMatrix({ comparison }: ComparisonChartProps) {
   const companies = [comparison.userCompany, ...comparison.competitors];
 
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-panel shadow-panel">
-      <div className="border-b border-line px-4 py-3">
-        <h3 className="font-semibold text-ink">Services overlap matrix</h3>
+    <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-panel">
+      <div className="border-b border-line px-6 py-4">
+        <h3 className="font-semibold text-ink">Services Overlap Matrix</h3>
+        <p className="mt-0.5 text-xs text-neutral-500">
+          Feature-by-feature capability match across target and competitor organizations.
+        </p>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-paper text-left text-xs uppercase text-neutral-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wider text-neutral-500">
             <tr>
-              <th className="px-4 py-3 font-semibold">Service</th>
+              <th className="px-6 py-3.5 font-semibold">Service / Feature</th>
               {companies.map((company) => (
-                <th className="px-4 py-3 font-semibold" key={company.name}>
+                <th className="px-6 py-3.5 font-semibold" key={company.name}>
                   {company.name}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {comparison.serviceOverlap.map((row) => (
-              <tr className="border-t border-line" key={row.service}>
-                <td className="px-4 py-3 font-medium text-ink">{row.service}</td>
-                {companies.map((company) => (
-                  <td className="px-4 py-3" key={company.name}>
-                    <span
-                      className={`inline-flex h-6 min-w-12 items-center justify-center rounded-md px-2 text-xs font-semibold ${
-                        row.companies.includes(company.name)
-                          ? "bg-accent text-white"
-                          : "bg-neutral-100 text-neutral-400"
-                      }`}
-                    >
-                      {row.companies.includes(company.name) ? "Yes" : "No"}
-                    </span>
-                  </td>
-                ))}
+              <tr className="transition hover:bg-paper/40" key={row.service}>
+                <td className="px-6 py-3.5 font-medium text-ink">{row.service}</td>
+                {companies.map((company) => {
+                  const hasService = row.companies.includes(company.name);
+                  return (
+                    <td className="px-6 py-3.5" key={company.name}>
+                      <span
+                        className={`inline-flex h-6 min-w-12 items-center justify-center rounded-md px-2 text-xs font-semibold ${
+                          hasService
+                            ? "bg-accent text-white"
+                            : "border border-line bg-paper text-neutral-400"
+                        }`}
+                      >
+                        {hasService ? "Yes" : "No"}
+                      </span>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -99,9 +105,9 @@ function ChartPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-md border border-line bg-panel p-4 shadow-panel">
+    <section className="rounded-2xl border border-line bg-panel p-6 shadow-panel">
       <h3 className="font-semibold text-ink">{title}</h3>
-      <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>
+      <p className="mt-1 text-xs text-neutral-500">{subtitle}</p>
       <div className="mt-4 h-72">{children}</div>
     </section>
   );

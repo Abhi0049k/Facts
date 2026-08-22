@@ -1,6 +1,7 @@
 import { ChatOllama } from "@langchain/ollama";
 import { z } from "zod";
 import { logger } from "./logger";
+import { asObjectList } from "./normalize-json";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 
@@ -126,30 +127,22 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
     return parsed;
   }
 
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    const record = parsed as Record<string, unknown>;
-    const wrapperKeys = [
-      "competitors",
-      "candidates",
-      "companies",
-      "profiles",
-      "results",
-      "items",
-      "data",
-      "output"
-    ];
-    for (const key of wrapperKeys) {
-      if (key in record && schema.safeParse(record[key]).success) {
-        logger.debug("LLM", "unwrapped object key to match schema", { key });
-        return record[key];
+  const unwrapped = unwrapZod(schema);
+  const wantsArray = unwrapped._def?.typeName === "ZodArray";
+
+  if (wantsArray) {
+    const list = asObjectList(parsed);
+    if (schema.safeParse(list).success) {
+      return list;
+    }
+    const inner = unwrapped._def?.type as z.ZodTypeAny | undefined;
+    if (inner) {
+      const mapped = list.map((item) => (inner.safeParse(item).success ? item : coerceItem(item, inner)));
+      if (schema.safeParse(mapped).success) {
+        return mapped;
       }
     }
-
-    const arrayValues = Object.values(record).filter(Array.isArray);
-    if (arrayValues.length === 1 && schema.safeParse(arrayValues[0]).success) {
-      logger.debug("LLM", "unwrapped sole array field to match schema");
-      return arrayValues[0];
-    }
+    return list;
   }
 
   if (Array.isArray(parsed) && parsed.length === 1 && schema.safeParse(parsed[0]).success) {
@@ -157,6 +150,62 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
     return parsed[0];
   }
 
+  return parsed;
+}
+
+function coerceItem(item: unknown, schema: z.ZodTypeAny): unknown {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    const record = { ...(item as Record<string, unknown>) };
+    for (const [key, value] of Object.entries(record)) {
+      if (value === null) {
+        record[key] = undefined;
+      }
+    }
+    if (schema.safeParse(record).success) {
+      return record;
+    }
+  }
+  return item;
+}
+
+function unwrapZod(schema: z.ZodTypeAny): z.ZodTypeAny {
+  let current = schema;
+  for (let i = 0; i < 8; i += 1) {
+    const typeName = current._def?.typeName as string | undefined;
+    if (typeName === "ZodEffects") {
+      current = current._def.schema as z.ZodTypeAny;
+      continue;
+    }
+    if (typeName === "ZodOptional" || typeName === "ZodNullable" || typeName === "ZodDefault") {
+      current = current._def.innerType as z.ZodTypeAny;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+export async function jsonCall(
+  stageName: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<unknown> {
+  const start = Date.now();
+  const model = modelName();
+  logger.stageStart(stageName, "LLM JSON call", { model, format: "json" });
+
+  const llm = getLlm();
+  const response = await llm.invoke([
+    { role: "system", content: `${systemPrompt}\n\n${JSON_ONLY_INSTRUCTION}` },
+    { role: "user", content: userPrompt }
+  ]);
+  const rawText = messageText(response.content);
+  logger.debug(stageName, "LLM raw output received", {
+    chars: rawText.length,
+    preview: rawText.slice(0, 400)
+  });
+  const parsed = extractJson(rawText);
+  logger.stageComplete(stageName, "LLM JSON call", { durationMs: Date.now() - start });
   return parsed;
 }
 
