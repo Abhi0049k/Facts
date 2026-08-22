@@ -1,3 +1,5 @@
+import { logger } from "@/lib/clients/logger";
+
 export interface TavilyResult {
   title: string;
   url: string;
@@ -6,31 +8,49 @@ export interface TavilyResult {
 
 export async function tavilySearch(query: string): Promise<TavilyResult[]> {
   const apiKey = process.env.TAVILY_API_KEY;
+  const stage = "Tavily";
 
   if (!apiKey) {
+    logger.stageWarn(stage, "TAVILY_API_KEY missing, using mock search results", { query });
     return mockTavily(query);
   }
 
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
+  logger.debug(stage, "search starting", { query });
+  const started = Date.now();
+
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        search_depth: "advanced",
+        max_results: 5
+      }),
+      next: { revalidate: 0 }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Tavily HTTP ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);
+    }
+
+    const data = (await response.json()) as { results?: TavilyResult[] };
+    const results = data.results ?? [];
+    logger.debug(stage, "search complete", {
       query,
-      search_depth: "advanced",
-      max_results: 5
-    }),
-    next: { revalidate: 0 }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Tavily ${response.status}`);
+      durationMs: Date.now() - started,
+      results: results.length,
+      urls: results.map((result) => result.url)
+    });
+    return results;
+  } catch (error) {
+    logger.exception(stage, error, { query, durationMs: Date.now() - started });
+    throw error;
   }
-
-  const data = (await response.json()) as { results?: TavilyResult[] };
-  return data.results ?? [];
 }
 
 function mockTavily(query: string): TavilyResult[] {

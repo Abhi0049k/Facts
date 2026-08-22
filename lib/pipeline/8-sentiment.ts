@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
 import { tavilySearch } from "@/lib/clients/tavily";
-import { PipelineStageError, type CompanyProfile, type SentimentResult } from "@/lib/types";
+import { type CompanyProfile, type SentimentResult } from "@/lib/types";
 
 const STAGE = "Stage8-Sentiment";
 
@@ -48,10 +48,11 @@ Return a SentimentResult array in the same company order.`,
 
     logger.stageComplete(STAGE, "sentiment analyzed", {
       durationMs: Date.now() - start,
-      companies: sentiment.length
+      companies: sentiment.length,
+      withScores: sentiment.filter((item) => item.dataAvailable).length
     });
     return sentiment;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { companies: companies.length });
   }
 }

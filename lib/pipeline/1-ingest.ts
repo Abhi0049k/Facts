@@ -1,12 +1,12 @@
 import { canScrapeCompanyPages, scrapePage } from "@/lib/clients/brightdata";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { PipelineStageError } from "@/lib/types";
 
 const STAGE = "Stage1-Ingest";
 
 export async function ingestUserCompany(companyUrl: string): Promise<string> {
   const start = Date.now();
-  logger.stageStart(STAGE, "scraping company site", { url: companyUrl });
+  logger.stageStart(STAGE, "scraping company homepage to markdown/JSON", { url: companyUrl });
 
   try {
     if (!process.env.BRIGHT_DATA_API_TOKEN?.trim()) {
@@ -27,12 +27,13 @@ export async function ingestUserCompany(companyUrl: string): Promise<string> {
       );
     }
 
-    logger.stageComplete(STAGE, "scraping company site", { durationMs: Date.now() - start });
+    logger.stageComplete(STAGE, "homepage scrape ready for Stage 2", {
+      durationMs: Date.now() - start,
+      chars: rawContent.length,
+      preview: rawContent.slice(0, 180)
+    });
     return rawContent;
   } catch (error) {
-    if (error instanceof PipelineStageError) {
-      throw error;
-    }
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { url: companyUrl });
   }
 }

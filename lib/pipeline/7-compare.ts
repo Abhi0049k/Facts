@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
-import { PipelineStageError, type CompanyProfile, type ComparisonResult } from "@/lib/types";
+import { type CompanyProfile, type ComparisonResult } from "@/lib/types";
 
 const STAGE = "Stage7-Compare";
 
@@ -65,9 +65,14 @@ Include serviceOverlap rows and feature gaps relative to the user company.`,
       ComparisonResultSchema
     );
 
-    logger.stageComplete(STAGE, "companies compared", { durationMs: Date.now() - start });
+    logger.stageComplete(STAGE, "market comparison ready", {
+      durationMs: Date.now() - start,
+      competitorCount: comparison.competitors.length,
+      overlapRows: comparison.serviceOverlap.length,
+      gapRows: comparison.gaps.length
+    });
     return comparison;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { competitors: competitors.length, userCompany: userCompany.name });
   }
 }

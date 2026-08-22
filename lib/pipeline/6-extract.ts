@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
-import { PipelineStageError, type CompanyProfile, type CompetitorScrapeResult } from "@/lib/types";
+import { type CompanyProfile, type CompetitorScrapeResult } from "@/lib/types";
 
 const STAGE = "Stage6-ExtractCompetitorProfiles";
 
@@ -47,10 +47,11 @@ ${JSON.stringify(scrapeResults, null, 2)}`,
 
     logger.stageComplete(STAGE, "competitor profiles extracted", {
       durationMs: Date.now() - start,
-      profiles: profiles.length
+      profiles: profiles.length,
+      names: profiles.map((profile) => profile.name)
     });
     return profiles;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { competitors: scrapeResults.length });
   }
 }

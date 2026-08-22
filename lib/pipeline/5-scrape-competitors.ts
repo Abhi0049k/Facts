@@ -6,9 +6,9 @@ import {
   serializeResult,
   slugFromName
 } from "@/lib/clients/brightdata";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { tavilySearch } from "@/lib/clients/tavily";
-import { PipelineStageError, type CompetitorScrapeResult } from "@/lib/types";
+import { type CompetitorScrapeResult } from "@/lib/types";
 
 const CRUNCHBASE_SOURCE = process.env.BRIGHT_DATA_COLLECTOR_CRUNCHBASE;
 const LINKEDIN_SOURCE = process.env.BRIGHT_DATA_COLLECTOR_LINKEDIN;
@@ -69,13 +69,22 @@ export async function scrapeCompetitors(
     const succeeded = results.filter((result) =>
       Object.values(result.sources).some((source) => source !== null)
     ).length;
-    logger.stageComplete(STAGE, `${succeeded}/${competitors.length} competitors scraped`, {
-      durationMs: Date.now() - start
+    logger.stageComplete(STAGE, "competitor sources scraped", {
+      durationMs: Date.now() - start,
+      succeeded,
+      total: competitors.length,
+      sourceHits: results.map((result) => ({
+        name: result.competitor.name,
+        website: Boolean(result.sources.website),
+        crunchbase: Boolean(result.sources.crunchbase),
+        linkedin: Boolean(result.sources.linkedin),
+        tofler: Boolean(result.sources.tofler)
+      }))
     });
 
     return results;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { competitorCount: competitors.length });
   }
 }
 

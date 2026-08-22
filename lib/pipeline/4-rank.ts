@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
-import { PipelineStageError, type CompanyProfile } from "@/lib/types";
+import { type CompanyProfile } from "@/lib/types";
 
 const STAGE = "Stage4-RankCompetitors";
 
@@ -39,12 +39,13 @@ Return the top 5 as a JSON array of { "name": string, "domain": string }.`,
       RankedCompetitorsSchema
     );
 
-    logger.stageComplete(STAGE, "competitors ranked", {
+    logger.stageComplete(STAGE, "top competitors selected", {
       durationMs: Date.now() - start,
-      selected: ranked.length
+      selected: ranked.length,
+      ranked: ranked.map((item) => ({ name: item.name, domain: item.domain }))
     });
     return ranked;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { candidateCount: rawCandidates.length });
   }
 }

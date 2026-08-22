@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
 import { tavilySearch } from "@/lib/clients/tavily";
-import { PipelineStageError, type CompanyProfile } from "@/lib/types";
+import { type CompanyProfile } from "@/lib/types";
 
 const STAGE = "Stage3-DiscoverCompetitors";
 
@@ -55,13 +55,15 @@ Exclude ${profile.name}. Return a JSON array with name and optional domain.`,
     );
 
     const deduped = dedupeByName(enriched);
-    logger.stageComplete(STAGE, "competitors discovered", {
+    logger.stageComplete(STAGE, "competitor candidates ready for ranking", {
       durationMs: Date.now() - start,
-      candidates: deduped.length
+      candidates: deduped.length,
+      withDomains: deduped.filter((candidate) => candidate.domain).length,
+      names: deduped.map((candidate) => candidate.name)
     });
     return deduped;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { searchIntentPhrase: profile.searchIntentPhrase });
   }
 }
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { logger } from "@/lib/clients/logger";
+import { failStage, logger } from "@/lib/clients/logger";
 import { structuredCall } from "@/lib/clients/llm";
-import { PipelineStageError, type CompanyProfile } from "@/lib/types";
+import { type CompanyProfile } from "@/lib/types";
 
 const STAGE = "Stage2-UnderstandCompany";
 
@@ -62,10 +62,16 @@ Omit optional stats and founders when the website does not support them. Never i
       CompanyProfileSchema
     );
 
-    logger.stageComplete(STAGE, "understanding company", { durationMs: Date.now() - start });
+    logger.stageComplete(STAGE, "company profile extracted", {
+      durationMs: Date.now() - start,
+      name: profile.name,
+      domain: profile.domain,
+      category: profile.category,
+      searchIntentPhrase: profile.searchIntentPhrase
+    });
     return profile;
   } catch (error) {
-    throw new PipelineStageError(STAGE, error instanceof Error ? error.message : String(error));
+    failStage(STAGE, error, { domain, contentChars: rawContent.length });
   }
 }
 
