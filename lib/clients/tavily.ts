@@ -7,7 +7,7 @@ export interface TavilyResult {
 }
 
 export async function tavilySearch(query: string): Promise<TavilyResult[]> {
-  const apiKey = process.env.TAVILY_API_KEY;
+  const apiKey = process.env.TAVILY_API_KEY?.trim();
   const stage = "Tavily";
 
   if (!apiKey) {

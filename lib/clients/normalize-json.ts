@@ -46,6 +46,85 @@ export function asObjectList(value: unknown): unknown[] {
   return [record];
 }
 
+export function repairCompanyProfile(item: unknown): Record<string, unknown> | null {
+  const record = flattenRecord(item);
+  if (!record || "siteKind" in record) {
+    return null;
+  }
+
+  const name = pickString(record, NAME_KEYS) || stringish(record.name);
+  const domain = firstHostname(record, DOMAIN_KEYS) || stringish(record.domain);
+  if (!name && !domain) {
+    return null;
+  }
+
+  const offerings =
+    pickString(record, ["offeringsSummary", "offerings", "full_description", "description", "about", "summary"]) ||
+    "No offerings summary was returned by the model.";
+  const category = pickString(record, ["category", "type", "industry"]) || "company";
+  const statsRecord = flattenRecord(record.stats) ?? {};
+  const employee =
+    pickString({ ...record, ...statsRecord }, ["employeeCount", "employees_in_linkedin", "employees"]) ||
+    (typeof record.employees_in_linkedin === "number" ? String(record.employees_in_linkedin) : undefined);
+  const funding = pickString({ ...record, ...statsRecord }, [
+    "fundingTotal",
+    "funding",
+    "total_funding",
+    "funding_total"
+  ]);
+  const revenue = pickString({ ...record, ...statsRecord }, ["revenueEstimate", "revenue"]);
+
+  return {
+    name: name || domain || "Unknown company",
+    domain: domain || "unknown",
+    category,
+    offeringsSummary: offerings.slice(0, 800),
+    founders: Array.isArray(record.founders)
+      ? record.founders.filter((entry): entry is string => typeof entry === "string")
+      : undefined,
+    stats: {
+      fundingTotal: funding,
+      employeeCount: employee,
+      revenueEstimate: revenue,
+      foundedYear: asYear(record.foundedYear ?? record.founded_year ?? statsRecord.foundedYear),
+      dataAvailability: {
+        funding: Boolean(funding),
+        revenue: Boolean(revenue),
+        employeeCount: Boolean(employee)
+      }
+    }
+  };
+}
+
+function flattenRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return flattenRecord(value[0]);
+  }
+  const record = value as Record<string, unknown>;
+  const nested = [flattenRecord(record.crunchbase), flattenRecord(record.linkedin), flattenRecord(record.website)];
+  return Object.assign({}, ...nested.filter(Boolean), record);
+}
+
+function stringish(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asYear(value: unknown): number | undefined {
+  if (typeof value === "number" && value > 1800 && value < 2100) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const match = value.match(/\b(19|20)\d{2}\b/);
+    if (match) {
+      return Number(match[0]);
+    }
+  }
+  return undefined;
+}
+
 export function asCompetitorCandidates(value: unknown): { name: string; domain?: string }[] {
   return asObjectList(value)
     .map(normalizeCandidate)

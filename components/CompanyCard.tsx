@@ -17,7 +17,7 @@ export function CompanyCard({ company, featured = false }: CompanyCardProps) {
         <div>
           {featured ? (
             <span className="mb-2 inline-block rounded-md bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent">
-              Target Company
+              Target
             </span>
           ) : null}
           <h3 className="text-xl font-semibold text-ink leading-none">{company.name}</h3>
@@ -32,7 +32,7 @@ export function CompanyCard({ company, featured = false }: CompanyCardProps) {
 
       {company.founders?.length ? (
         <div className="mt-4">
-          <div className="text-xs font-semibold uppercase text-neutral-500">Founders</div>
+          <div className="text-xs font-medium text-muted">Founders</div>
           <div className="mt-1 text-sm text-ink">{company.founders.join(", ")}</div>
         </div>
       ) : null}

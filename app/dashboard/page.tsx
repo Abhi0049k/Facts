@@ -1,17 +1,18 @@
 "use client";
 
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { PipelineProgress, stageNumberFromName } from "@/components/PipelineProgress";
 import { SiteHeader } from "@/components/SiteHeader";
+import { StageOutputList } from "@/components/StageOutputList";
 import { readAnalyzeStream } from "@/lib/client/read-analyze-stream";
 import type { AnalyzeResponse } from "@/lib/types";
 
 const autoStartedKeys = new Set<string>();
 
 function DashboardInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const urlFromQuery = searchParams.get("url")?.trim() ?? "";
   const sentimentFromQuery = searchParams.get("sentiment") === "1";
@@ -24,6 +25,12 @@ function DashboardInner() {
   const [failedStage, setFailedStage] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [haltMessage, setHaltMessage] = useState<string | null>(null);
+  const [reportReady, setReportReady] = useState(false);
+  const [notices, setNotices] = useState<string[]>([]);
+  const [stageOutputs, setStageOutputs] = useState<Array<{ stage: number; title: string; payload?: unknown }>>(
+    []
+  );
   const runningRef = useRef(false);
 
   async function runAnalysis(nextUrl: string, nextSentiment: boolean) {
@@ -32,11 +39,15 @@ function DashboardInner() {
     }
     runningRef.current = true;
     setError(null);
+    setHaltMessage(null);
+    setReportReady(false);
     setFailedStage(null);
     setIsRunning(true);
     setCurrentStage(1);
     setCompletedStages([]);
-    setStatusMessage("Starting pipeline...");
+    setStageOutputs([]);
+    setNotices([]);
+    setStatusMessage("Visiting the homepage...");
 
     try {
       const response = await fetch("/api/analyze", {
@@ -56,16 +67,41 @@ function DashboardInner() {
 
       let finished: AnalyzeResponse | null = null;
       let streamError: string | null = null;
+      let halted = false;
 
       await readAnalyzeStream(response, (event) => {
         if (event.type === "stage") {
+          if (event.status === "retry") {
+            setStatusMessage(event.message);
+            setNotices((current) =>
+              current.includes(event.message) ? current : [...current, event.message]
+            );
+            if (event.stage > 0) {
+              setCurrentStage(event.stage);
+            }
+            return;
+          }
           setCurrentStage(event.stage);
           setStatusMessage(event.message);
           if (event.status === "complete") {
             setCompletedStages((stages) =>
               stages.includes(event.stage) ? stages : [...stages, event.stage]
             );
+            setStageOutputs((current) => [
+              ...current.filter((item) => item.stage !== event.stage),
+              { stage: event.stage, title: event.message, payload: event.payload }
+            ]);
           }
+          return;
+        }
+
+        if (event.type === "halted") {
+          halted = true;
+          setCompletedStages(event.completedStages);
+          setCurrentStage(event.stage);
+          setHaltMessage(event.message);
+          setStatusMessage(null);
+          setIsRunning(false);
           return;
         }
 
@@ -75,6 +111,8 @@ function DashboardInner() {
           setFailedStage(failed);
           setCurrentStage(failed ?? event.completedStages.at(-1) ?? 1);
           setStatusMessage(null);
+          setError(event.error);
+          setIsRunning(false);
           streamError = event.error;
           return;
         }
@@ -87,12 +125,18 @@ function DashboardInner() {
           };
           setCompletedStages(event.completedStages);
           setCurrentStage(nextSentiment ? 8 : 7);
-          setStatusMessage("Analysis complete");
+          setStatusMessage("Briefing ready");
         }
       });
 
       if (streamError) {
         throw new Error(streamError);
+      }
+
+      if (halted) {
+        setIsRunning(false);
+        runningRef.current = false;
+        return;
       }
 
       if (!finished) {
@@ -102,7 +146,9 @@ function DashboardInner() {
       }
 
       window.localStorage.setItem("facts:last-analysis", JSON.stringify(finished));
-      router.push("/results");
+      setReportReady(true);
+      setIsRunning(false);
+      runningRef.current = false;
     } catch (analysisError) {
       const message =
         analysisError instanceof TypeError && analysisError.message === "Failed to fetch"
@@ -139,33 +185,54 @@ function DashboardInner() {
       setError("Paste a company homepage first.");
       return;
     }
+    autoStartedKeys.delete(`${trimmed}|${includeSentiment ? "1" : "0"}`);
+    runningRef.current = false;
     void runAnalysis(trimmed, includeSentiment);
   }
+
+  const runLabel = error ? "Stopped" : haltMessage ? "Not a company" : reportReady ? "Ready" : isRunning ? "Running" : "Idle";
 
   return (
     <div className="min-h-[100dvh] bg-paper text-ink">
       <SiteHeader compact />
 
-      <main className="mx-auto grid w-full max-w-6xl gap-8 px-5 pb-16 pt-6 lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start">
-        <section className="rounded-xl border border-line bg-panel p-6 shadow-panel">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+      <main className="mx-auto grid w-full max-w-6xl gap-10 px-5 pb-16 pt-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] lg:items-start">
+        <aside className="lg:sticky lg:top-6">
+          <p className="font-mono text-[11px] text-muted">{runLabel}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">This run</h1>
           <p className="mt-2 text-sm leading-6 text-muted">
-            The pipeline runs here. Stages complete live as scrape and model work finishes.
+            Watch the scrape, then the company check. Later steps only run if this URL is a business.
           </p>
 
-          {error ? (
-            <div className="mt-4 rounded-lg border border-coral/30 bg-coral/10 p-3 text-sm text-coral">
-              {error}
-            </div>
+          {statusMessage ? (
+            <p className="mt-4 text-sm font-medium text-amber">{statusMessage}</p>
           ) : null}
 
-          <form className="mt-6 flex flex-col gap-4" onSubmit={onSubmit}>
+          <div className="mt-6">
+            <PipelineProgress
+              completedStages={completedStages}
+              currentStage={currentStage}
+              failedStage={failedStage}
+              includeSentiment={includeSentiment}
+            />
+          </div>
+
+          {reportReady ? (
+            <Link
+              className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#236b5b] px-4 text-sm font-semibold text-[#f3f4ee]"
+              href="/results"
+            >
+              Open report
+            </Link>
+          ) : null}
+
+          <form className="mt-8 flex flex-col gap-4 border-t border-line pt-6" onSubmit={onSubmit}>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium" htmlFor="company-url">
                 Company URL
               </label>
               <input
-                className="h-11 rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none placeholder:text-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="h-11 rounded-lg border border-line bg-panel px-3 text-sm text-ink outline-none placeholder:text-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 disabled={isRunning}
                 id="company-url"
                 onChange={(event) => setCompanyUrl(event.target.value)}
@@ -191,28 +258,34 @@ function DashboardInner() {
               disabled={isRunning || !companyUrl.trim()}
               type="submit"
             >
-              {isRunning ? "Running analysis..." : "Analyze company"}
+              {isRunning ? "Running..." : "Run again"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
-        </section>
+        </aside>
 
-        <section className="space-y-5">
-          <div className="rounded-xl border border-line bg-panel p-6 shadow-panel">
-            <h2 className="text-lg font-semibold">Pipeline</h2>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Each stage returns JSON the next stage can trust. Cost stays visible because the
-              sequence is fixed.
-            </p>
-            {statusMessage ? <p className="mt-3 text-sm font-medium text-amber">{statusMessage}</p> : null}
+        <section className="min-w-0 rounded-xl border border-line bg-panel p-6 shadow-panel md:p-8">
+          <h2 className="text-lg font-semibold">Briefing file</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            Each block is what that step passed forward. Images and data URIs are stripped so you can
+            actually read the page.
+          </p>
+
+          {haltMessage ? (
+            <div className="mt-5 rounded-lg border border-amber/40 bg-amber/10 p-4 text-sm leading-6 text-ink">
+              {haltMessage}
+            </div>
+          ) : null}
+
+          <div className="mt-6">
+              <StageOutputList
+                error={error}
+                failedStage={failedStage}
+                liveMessage={isRunning ? statusMessage : null}
+                notices={notices}
+                stages={stageOutputs}
+              />
           </div>
-
-          <PipelineProgress
-            completedStages={completedStages}
-            currentStage={currentStage}
-            failedStage={failedStage}
-            includeSentiment={includeSentiment}
-          />
         </section>
       </main>
     </div>
@@ -225,7 +298,7 @@ export default function DashboardPage() {
       fallback={
         <div className="min-h-[100dvh] bg-paper text-ink">
           <SiteHeader compact />
-          <p className="px-5 py-10 text-sm text-muted">Loading dashboard...</p>
+          <p className="px-5 py-10 text-sm text-muted">Opening this run...</p>
         </div>
       }
     >

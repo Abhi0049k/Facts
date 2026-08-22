@@ -12,6 +12,27 @@ export async function readAnalyzeStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const consume = (chunk: string) => {
+    const dataLine = chunk
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("data:"));
+    if (!dataLine) {
+      return;
+    }
+    const json = dataLine.slice("data:".length).trim();
+    if (!json) {
+      return;
+    }
+    try {
+      onEvent(JSON.parse(json) as PipelineStreamEvent);
+    } catch (error) {
+      throw new Error(
+        `Could not read a pipeline event (${error instanceof Error ? error.message : "invalid JSON"}).`
+      );
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) {
@@ -20,20 +41,13 @@ export async function readAnalyzeStream(
     buffer += decoder.decode(value, { stream: true });
     const chunks = buffer.split("\n\n");
     buffer = chunks.pop() ?? "";
-
     for (const chunk of chunks) {
-      const dataLine = chunk
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.startsWith("data:"));
-      if (!dataLine) {
-        continue;
-      }
-      const json = dataLine.slice("data:".length).trim();
-      if (!json) {
-        continue;
-      }
-      onEvent(JSON.parse(json) as PipelineStreamEvent);
+      consume(chunk);
     }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    consume(buffer);
   }
 }

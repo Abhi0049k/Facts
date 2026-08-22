@@ -1,7 +1,7 @@
 import { ChatOllama } from "@langchain/ollama";
 import { z } from "zod";
 import { logger } from "./logger";
-import { asObjectList } from "./normalize-json";
+import { asObjectList, repairCompanyProfile } from "./normalize-json";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 
@@ -49,7 +49,7 @@ export async function structuredCall<T>(
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     let rawText = "";
     try {
-      const response = await llm.invoke(messages);
+      const response = await invokeTimed(llm, messages);
       rawText = messageText(response.content);
       logger.debug(stageName, "LLM raw output received", {
         attempt,
@@ -60,15 +60,19 @@ export async function structuredCall<T>(
       const parsed = coerceForSchema(extractJson(rawText), schema);
       const validated = schema.safeParse(parsed);
       if (!validated.success) {
-        lastError = new Error(`${stageName}: LLM output did not match expected schema`);
+        lastError = new Error(schemaErrorMessage(stageName, validated.error));
         logger.stageWarn(stageName, "LLM output failed schema validation", {
           attempt,
+          missingFields: validated.error.issues.map((issue) => issue.path.join(".") || issue.message),
           zodErrors: validated.error.flatten(),
           preview: rawText.slice(0, 400)
         });
+        if (attempt === 2) {
+          break;
+        }
         messages.push({
           role: "user",
-          content: `Your previous reply was not valid for the schema. Return ONLY corrected JSON.\nIssues: ${JSON.stringify(validated.error.issues)}\nPrevious reply:\n${rawText.slice(0, 4000)}`
+          content: `That JSON did not match the schema. Reply with corrected JSON only. Do not echo source dumps. Issues: ${JSON.stringify(validated.error.issues.slice(0, 8))}`
         });
         continue;
       }
@@ -88,7 +92,7 @@ export async function structuredCall<T>(
       if (attempt === 1) {
         messages.push({
           role: "user",
-          content: `The previous reply was not valid JSON. Reply with a single JSON value only, no markdown.\nPrevious reply:\n${rawText.slice(0, 4000) || lastError.message}`
+          content: "The previous reply was not valid JSON. Reply with a single JSON value only."
         });
         continue;
       }
@@ -100,6 +104,26 @@ export async function structuredCall<T>(
     error: lastError?.message ?? "unknown"
   });
   throw lastError ?? new Error(`${stageName}: LLM call failed`);
+}
+
+async function invokeTimed(
+  llm: ReturnType<typeof getLlm>,
+  messages: { role: "system" | "user"; content: string }[]
+) {
+  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS) || 90_000;
+  return await Promise.race([
+    llm.invoke(messages),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`The local model did not reply within ${Math.round(timeoutMs / 1000)} seconds.`));
+      }, timeoutMs);
+    })
+  ]);
+}
+
+function schemaErrorMessage(stageName: string, error: z.ZodError): string {
+  const fields = [...new Set(error.issues.map((issue) => issue.path.join(".") || "profile"))];
+  return `${stageName}: the model omitted required fields (${fields.slice(0, 6).join(", ")}).`;
 }
 
 function messageText(content: unknown): string {
@@ -137,7 +161,14 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
     }
     const inner = unwrapped._def?.type as z.ZodTypeAny | undefined;
     if (inner) {
-      const mapped = list.map((item) => (inner.safeParse(item).success ? item : coerceItem(item, inner)));
+      const mapped = list.map((item) => {
+        const repaired = repairCompanyProfile(item);
+        if (repaired && inner.safeParse(repaired).success) {
+          logger.debug("LLM", "repaired nested company fields into a profile");
+          return repaired;
+        }
+        return inner.safeParse(item).success ? item : coerceItem(item, inner);
+      });
       if (schema.safeParse(mapped).success) {
         return mapped;
       }
@@ -154,6 +185,10 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
 }
 
 function coerceItem(item: unknown, schema: z.ZodTypeAny): unknown {
+  const repaired = repairCompanyProfile(item);
+  if (repaired && schema.safeParse(repaired).success) {
+    return repaired;
+  }
   if (item && typeof item === "object" && !Array.isArray(item)) {
     const record = { ...(item as Record<string, unknown>) };
     for (const [key, value] of Object.entries(record)) {
@@ -195,7 +230,7 @@ export async function jsonCall(
   logger.stageStart(stageName, "LLM JSON call", { model, format: "json" });
 
   const llm = getLlm();
-  const response = await llm.invoke([
+  const response = await invokeTimed(llm, [
     { role: "system", content: `${systemPrompt}\n\n${JSON_ONLY_INSTRUCTION}` },
     { role: "user", content: userPrompt }
   ]);

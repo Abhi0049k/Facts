@@ -60,10 +60,14 @@ export interface AnalyzeRequest {
   includeSentiment?: boolean;
 }
 
+export type SiteKind = "company" | "personal_profile" | "not_a_company";
+
 export interface AnalyzeResponse {
   runId?: string;
   state: PipelineState;
   completedStages: number[];
+  halted?: boolean;
+  haltMessage?: string;
 }
 
 export interface AnalyzeErrorResponse {

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { logger, withPipelineRun } from "@/lib/clients/logger";
+import { withPipelineNotices } from "@/lib/pipeline/notices";
 import { runPipeline } from "@/lib/pipeline/run";
 import type { PipelineStreamEvent } from "@/lib/pipeline-events";
 import { PipelineStageError, type AnalyzeErrorResponse, type AnalyzeRequest } from "@/lib/types";
@@ -46,48 +47,52 @@ export async function POST(request: Request) {
         }
       }, 12_000);
 
-      withPipelineRun(runId, async () => {
-        const completedStages: number[] = [];
-        try {
-          const result = await runPipeline(
-            {
-              runId,
-              companyUrl,
-              includeSentiment: Boolean(body.includeSentiment)
-            },
-            async (event) => {
-              if (event.type === "stage" && event.status === "complete") {
-                completedStages.push(event.stage);
+      withPipelineRun(runId, () =>
+        withPipelineNotices((event) => send(event), async () => {
+          const completedStages: number[] = [];
+          try {
+            const result = await runPipeline(
+              {
+                runId,
+                companyUrl,
+                includeSentiment: Boolean(body.includeSentiment)
+              },
+              async (event) => {
+                if (event.type === "stage" && event.status === "complete") {
+                  completedStages.push(event.stage);
+                }
+                send(event);
               }
-              send(event);
+            );
+            if (!result.halted) {
+              send({
+                type: "done",
+                runId: result.runId ?? runId,
+                state: result.state,
+                completedStages: result.completedStages
+              });
             }
-          );
-          send({
-            type: "done",
-            runId: result.runId ?? runId,
-            state: result.state,
-            completedStages: result.completedStages
-          });
-        } catch (error) {
-          const failedStage = error instanceof PipelineStageError ? error.stage : "unknown";
-          logger.pipelineFailed(
-            runId,
-            failedStage,
-            error instanceof Error ? error.message : String(error),
-            { completedStages }
-          );
-          send({
-            type: "error",
-            runId,
-            error: error instanceof Error ? error.message : "Pipeline failed",
-            failedStage,
-            completedStages
-          });
-        } finally {
-          clearInterval(ping);
-          controller.close();
-        }
-      }).catch((error) => {
+          } catch (error) {
+            const failedStage = error instanceof PipelineStageError ? error.stage : "unknown";
+            logger.pipelineFailed(
+              runId,
+              failedStage,
+              error instanceof Error ? error.message : String(error),
+              { completedStages }
+            );
+            send({
+              type: "error",
+              runId,
+              error: error instanceof Error ? error.message : "Pipeline failed",
+              failedStage,
+              completedStages
+            });
+          } finally {
+            clearInterval(ping);
+            controller.close();
+          }
+        })
+      ).catch((error) => {
         logger.exception("Pipeline", error, { runId });
         clearInterval(ping);
         try {

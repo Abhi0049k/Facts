@@ -86,7 +86,62 @@ npm install
 npm run dev
 ```
 
-Open `/` and paste a company homepage. That sends you to `/dashboard?url=...`, where the pipeline runs. When it finishes, Facts stores the briefing in `localStorage` and opens `/results`.
+Open `/` and paste a company homepage. That sends you to `/dashboard?url=...`, where the pipeline runs. The dashboard shows each stage's output (including the scraped page). If stage 2 decides the URL is a person or not a company, discovery stops with a message. If it is a company, you can open `/results` after the run finishes.
+
+## App URLs
+
+| URL | File | What it does |
+| --- | --- | --- |
+| `GET /` | `app/page.tsx` | Home. Paste a company URL. Form lives in `components/UrlEntry.tsx`. |
+| `GET /dashboard` | `app/dashboard/page.tsx` | Live pipeline. Reads `?url=` and optional `?sentiment=1`, then POST `/api/analyze`. |
+| `GET /results` | `app/results/page.tsx` | Comparison report from `localStorage` key `facts:last-analysis`. |
+| `POST /api/analyze` | `app/api/analyze/route.ts` | SSE endpoint. Normalizes the URL, runs `lib/pipeline/run.ts`, streams stage events. |
+
+Shared chrome: `app/layout.tsx` (fonts, metadata), `components/SiteHeader.tsx`.
+
+## Which file does what
+
+### Pages and API
+
+- `app/layout.tsx`: root HTML, Outfit font, global CSS.
+- `app/page.tsx`: marketing home and URL entry.
+- `app/dashboard/page.tsx`: progress, scraped text, stage payloads, halt messages.
+- `app/results/page.tsx`: cards, overlap charts, comparison table.
+- `app/api/analyze/route.ts`: `POST /api/analyze` SSE (`text/event-stream`).
+
+### Pipeline (one stage per file)
+
+- `lib/pipeline/run.ts`: ordered stages, emits start/complete payloads, stops after stage 2 when the page is not a company.
+- `lib/pipeline/1-ingest.ts`: visits the URL through Bright Data Web Unlocker. Output is page markdown/text.
+- `lib/pipeline/classify-site.ts`: URL heuristics (LinkedIn `/in/`, social profiles, Wikipedia) as a hint for stage 2.
+- `lib/pipeline/2-understand.ts`: LLM reads the scrape, sets `siteKind` (`company`, `personal_profile`, `not_a_company`), and only then builds a `CompanyProfile`.
+- `lib/pipeline/3-discover.ts`: candidate rivals from the local model plus optional Tavily.
+- `lib/pipeline/4-rank.ts`: top five domains.
+- `lib/pipeline/5-scrape-competitors.ts`: Unlocker homepages plus Crunchbase/LinkedIn/Tofler datasets.
+- `lib/pipeline/6-extract.ts`: competitor `CompanyProfile[]`.
+- `lib/pipeline/7-compare.ts`: overlap and gaps.
+- `lib/pipeline/8-sentiment.ts`: optional review search and scores.
+
+### Clients and UI helpers
+
+- `lib/clients/brightdata.ts`: Unlocker, Datasets v3, DCA collectors.
+- `lib/clients/llm.ts`: Ollama JSON calls.
+- `lib/clients/tavily.ts`: web search.
+- `lib/clients/logger.ts`: run-scoped stage logs.
+- `lib/clients/normalize-json.ts`: unwrap messy LLM lists.
+- `lib/pipeline-events.ts`: SSE event types (`stage`, `halted`, `done`, `error`).
+- `lib/client/read-analyze-stream.ts`: browser SSE parser.
+- `lib/types.ts`: shared TypeScript types.
+- `components/PipelineProgress.tsx`: stage grid.
+- `components/StageOutputList.tsx`: scraped text and JSON handed to the next stage.
+- `components/CompanyCard.tsx`, `ComparisonChart.tsx`, `ComparisonTable.tsx`: results UI.
+
+### How company vs person is decided
+
+1. Stage 1 only scrapes. The dashboard shows that scrape (truncated if long).
+2. Stage 2 combines the URL hint with the scrape. A LinkedIn `/in/` URL, a personal portfolio, or a Wikipedia article is not treated as a company.
+3. If `siteKind` is `personal_profile` or `not_a_company`, the stream sends `halted` and later stages do not run.
+4. If it is a `company`, discovery continues as before.
 
 The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data needs an API token plus a Web Unlocker zone (homepages) and/or dataset IDs (Crunchbase, LinkedIn).
 
@@ -127,8 +182,8 @@ A Cursor MCP SSE URL (`.cursor/mcp.json`, gitignored) is only for the IDE agent.
 
 | Stage | Input | Output | External service |
 | --- | --- | --- | --- |
-| 1. Ingest User Company | Company URL | `rawContent: string` | Bright Data Web Unlocker |
-| 2. Understand Company | `rawContent` | `CompanyProfile` | LLM |
+| 1. Ingest User Company | Company URL | `rawContent: string` (shown on the dashboard) | Bright Data Web Unlocker |
+| 2. Understand Company | scrape + URL hint | `siteKind` + `CompanyProfile` or halt | LLM |
 | 3. Discover Competitors | `searchIntentPhrase` | `{ name, domain? }[]` | LLM + Tavily |
 | 4. Rank & Select Competitors | Raw candidates + `CompanyProfile` | `Competitor[]` max 5 | LLM |
 | 5. Scrape Competitors | Competitor domains | Raw content per competitor/source | Unlocker + Datasets v3 |

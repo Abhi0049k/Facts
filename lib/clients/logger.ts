@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { PipelineStageError } from "@/lib/types";
+import { emitPipelineNotice } from "@/lib/pipeline/notices";
 
 const COLORS = {
   reset: "\x1b[0m",
@@ -89,10 +90,12 @@ export const logger = {
 
   stageWarn(stage: string, message: string, meta?: Record<string, unknown>) {
     line(COLORS.yellow, "⚠", stage, message, meta);
+    emitPipelineNotice(stage, humanNotice(stage, message, meta));
   },
 
   stageError(stage: string, message: string, meta?: Record<string, unknown>) {
     line(COLORS.red, "✗", stage, message, meta);
+    emitPipelineNotice(stage, humanNotice(stage, message, meta));
   },
 
   debug(stage: string, message: string, meta?: Record<string, unknown>) {
@@ -137,4 +140,17 @@ export async function logStage<T>(
     logger.exception(stage, error, { action, durationMs: Date.now() - started, ...startMeta });
     throw error;
   }
+}
+
+function humanNotice(stage: string, message: string, meta?: Record<string, unknown>): string {
+  if (message.toLowerCase().includes("schema")) {
+    const fields = Array.isArray(meta?.missingFields)
+      ? (meta.missingFields as unknown[]).filter((item): item is string => typeof item === "string" && item.length > 0)
+      : [];
+    const unique = [...new Set(fields.map((field) => field.replace(/^\d+\./, "") || field))];
+    return unique.length
+      ? `The model reply did not match the expected shape. Missing ${unique.slice(0, 6).join(", ")}.`
+      : "The model reply did not match the expected shape.";
+  }
+  return message;
 }

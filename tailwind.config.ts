@@ -18,7 +18,8 @@ const config: Config = {
         coral: "var(--coral)"
       },
       fontFamily: {
-        sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"]
+        sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"]
       },
       boxShadow: {
         panel: "0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent)"

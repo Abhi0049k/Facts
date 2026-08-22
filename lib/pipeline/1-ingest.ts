@@ -23,7 +23,7 @@ export async function ingestUserCompany(companyUrl: string): Promise<string> {
     if (!rawContent) {
       throw new PipelineStageError(
         STAGE,
-        `Failed to scrape ${companyUrl} — check the Bright Data API token and Web Unlocker zone`
+        `Failed to scrape ${companyUrl}. Check the Bright Data API token and Web Unlocker zone.`
       );
     }
 
