@@ -8,16 +8,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#17201a",
-        paper: "#f7f8f3",
-        panel: "#ffffff",
-        line: "#dce2d7",
-        accent: "#236b5b",
-        amber: "#b7791f",
-        coral: "#c45640"
+        ink: "var(--ink)",
+        paper: "var(--paper)",
+        panel: "var(--panel)",
+        line: "var(--line)",
+        muted: "var(--muted)",
+        accent: "var(--accent)",
+        amber: "var(--amber)",
+        coral: "var(--coral)"
+      },
+      fontFamily: {
+        sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"]
       },
       boxShadow: {
-        panel: "0 1px 2px rgba(23, 32, 26, 0.06)"
+        panel: "0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent)"
       }
     }
   },

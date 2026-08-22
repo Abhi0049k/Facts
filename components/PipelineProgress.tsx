@@ -29,9 +29,7 @@ export function PipelineProgress({
   return (
     <div className="rounded-2xl border border-line bg-panel p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-500">
-          Pipeline Execution Stage
-        </h3>
+        <h3 className="text-sm font-semibold text-muted">Pipeline</h3>
         <span className="text-xs font-medium text-accent">
           {completedStages.length} of {visibleStages.length} completed
         </span>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
+import { SiteHeader } from "@/components/SiteHeader";
 import { CompanyCard } from "@/components/CompanyCard";
 import { ComparisonChart, ServicesMatrix } from "@/components/ComparisonChart";
 import { ComparisonTable } from "@/components/ComparisonTable";
@@ -28,35 +29,33 @@ export default function ResultsPage() {
 
   if (!state || !comparison || !state.userCompany) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-4xl items-center justify-center px-5 py-6">
-        <div className="rounded-2xl border border-line bg-panel p-8 text-center shadow-panel">
-          <h1 className="text-xl font-semibold text-ink">No analysis found</h1>
-          <p className="mt-2 text-sm text-neutral-600">Run a company analysis to populate the report dashboard.</p>
-          <Link
-            className="mt-5 inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d594c] active:bg-[#16443a] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-            href="/"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            New analysis
-          </Link>
-        </div>
-      </main>
+      <div className="min-h-[100dvh] bg-paper">
+        <SiteHeader compact />
+        <main className="mx-auto flex max-w-4xl items-center justify-center px-5 py-16">
+          <div className="rounded-xl border border-line bg-panel p-8 text-center shadow-panel">
+            <h1 className="text-xl font-semibold text-ink">No analysis found</h1>
+            <p className="mt-2 text-sm text-muted">Paste a company URL on the home page to run a briefing.</p>
+            <Link
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#236b5b] px-4 py-2.5 text-sm font-semibold text-[#f3f4ee] transition hover:bg-[#1a5246]"
+              href="/"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              New briefing
+            </Link>
+          </div>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-7xl px-5 py-6">
+    <div className="min-h-[100dvh] bg-paper">
+      <SiteHeader compact />
+      <main className="mx-auto w-full max-w-7xl px-5 py-6">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-6">
         <div>
-          <Link
-            className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-accent transition hover:underline"
-            href="/"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            New analysis
-          </Link>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">Facts Intelligence Report</h1>
-          <p className="mt-1 text-sm text-neutral-600">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">Intelligence report</h1>
+          <p className="mt-1 text-sm text-muted">
             {companies.length} companies compared across offerings, public stats, and market gaps.
           </p>
         </div>
@@ -87,6 +86,7 @@ export default function ResultsPage() {
 
       {sentiment ? <SentimentSection sentiment={sentiment} /> : null}
     </main>
+    </div>
   );
 }
 
@@ -95,7 +95,7 @@ function SentimentSection({ sentiment }: { sentiment: SentimentResult[] }) {
     <section className="pb-8">
       <div className="rounded-2xl border border-line bg-panel shadow-panel">
         <div className="border-b border-line px-6 py-4">
-          <h2 className="font-semibold text-ink">Public Sentiment & Reviews</h2>
+          <h2 className="font-semibold text-ink">Public sentiment and reviews</h2>
           <p className="mt-0.5 text-xs text-neutral-500">
             Optional review-source search and LLM sentiment scoring.
           </p>
@@ -107,7 +107,9 @@ function SentimentSection({ sentiment }: { sentiment: SentimentResult[] }) {
                 <h3 className="font-semibold text-ink">{item.companyName}</h3>
                 <span
                   className={`rounded-md px-2.5 py-1 text-xs font-semibold ${
-                    item.dataAvailable ? "bg-accent text-white" : "border border-line bg-panel text-neutral-500"
+                    item.dataAvailable
+                      ? "bg-[#236b5b] text-[#f3f4ee]"
+                      : "border border-line bg-panel text-muted"
                   }`}
                 >
                   {item.dataAvailable && item.sentimentScore !== undefined

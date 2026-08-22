@@ -37,9 +37,11 @@ Facts uses a fixed-sequence pipeline, not an autonomous agent. Each stage takes 
 ```text
 facts/
 ├── app/                            # Next.js App Router pages and API routes
-│   ├── page.tsx                    # Input form and pipeline progress screen
+│   ├── page.tsx                    # Home: paste a company URL
+│   ├── dashboard/
+│   │   └── page.tsx                # Pipeline progress and analysis run
 │   ├── results/
-│   │   └── page.tsx                # Results dashboard
+│   │   └── page.tsx                # Comparison report
 │   ├── api/
 │   │   └── analyze/
 │   │       └── route.ts            # Main orchestrating endpoint
@@ -83,6 +85,8 @@ Then install dependencies and run the app:
 npm install
 npm run dev
 ```
+
+Open `/` and paste a company homepage. That sends you to `/dashboard?url=...`, where the pipeline runs. When it finishes, Facts stores the briefing in `localStorage` and opens `/results`.
 
 The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data needs an API token plus a Web Unlocker zone (homepages) and/or dataset IDs (Crunchbase, LinkedIn).
 
