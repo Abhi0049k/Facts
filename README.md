@@ -119,9 +119,9 @@ facts/
 │   └── migrations/                 # Migration SQL files
 ├── public/                         # Static web assets and screenshots
 │   └── screenshots/                # Application UI screenshots
-│       ├── localhost_3000_.png                             # Home page screenshot
-│       ├── localhost_3000_dashboard_url=wemakedevs.org.png # Pipeline execution progress screenshot
-│       └── localhost_3000_results_url=wemakedevs.org.png   # Intelligence report results screenshot
+│       ├── home_landing.png        # Home page screenshot
+│       ├── dashboard_progress.png  # Pipeline execution progress screenshot
+│       └── results_report.png      # Intelligence report results screenshot
 ├── .env.example                    # Environment configuration template
 ├── package.json                    # Project dependencies and npm scripts
 ├── tsconfig.json                   # TypeScript configuration
@@ -180,13 +180,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ## 📸 Screenshots
 
 ### Home Page
-![Home Landing Page](./public/screenshots/localhost_3000_.png)
+![Home Landing Page](./public/screenshots/home_landing.png)
 
 ### Pipeline Execution Progress
-![Pipeline Progress Screen](./public/screenshots/localhost_3000_dashboard_url=wemakedevs.org.png)
+![Pipeline Progress Screen](./public/screenshots/dashboard_progress.png)
 
 ### Intelligence Report & Comparison Matrix
-![Intelligence Results Page](./public/screenshots/localhost_3000_results_url=wemakedevs.org.png)
+![Intelligence Results Page](./public/screenshots/results_report.png)
 
 ---
 
