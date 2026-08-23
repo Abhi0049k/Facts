@@ -66,9 +66,7 @@ export async function discoverCompetitors(
     );
 
     const deduped = dedupeByName(enriched).filter(
-      (candidate) =>
-        candidate.name.toLowerCase() !== profile.name.toLowerCase() &&
-        candidate.domain !== profile.domain
+      (candidate) => !isTargetCompany(candidate, profile)
     );
 
     if (deduped.length === 0) {
@@ -244,4 +242,24 @@ function dedupeByName(candidates: { name: string; domain?: string }[]) {
     seen.add(key);
     return true;
   });
+}
+
+function isTargetCompany(candidate: { name: string; domain?: string }, profile: CompanyProfile): boolean {
+  const candName = candidate.name.toLowerCase().trim();
+  const targetName = profile.name.toLowerCase().trim();
+  
+  if (candName === targetName || candName.includes(targetName) || targetName.includes(candName)) {
+    return true;
+  }
+  
+  if (candidate.domain && profile.domain) {
+    const candHost = candidate.domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0].replace(/^www\./, "");
+    const targetHost = profile.domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0].replace(/^www\./, "");
+    
+    if (candHost === targetHost || candHost.includes(targetHost) || targetHost.includes(candHost)) {
+      return true;
+    }
+  }
+  
+  return false;
 }

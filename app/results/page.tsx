@@ -31,29 +31,33 @@ function loadStoredReport(domain: string, includeSentiment: boolean): StoredRepo
   }
 }
 
-function displayCompany(company: CompanyProfile | undefined | null, fallback: string): CompanyProfile {
-  return company ?? {
-    name: fallback,
-    domain: "",
-    category: "",
-    offeringsSummary: "",
-    stats: {
-      foundedYear: undefined,
-      employeeCount: undefined,
-      fundingTotal: undefined,
-      dataAvailability: { funding: false, revenue: false, employeeCount: false },
-    },
-  };
+function formatStatValue(value: string | number | undefined | null): string {
+  if (value === undefined || value === null) return "N/A";
+  const str = String(value).trim();
+  if (!str || str.toLowerCase() === "not listed" || str.toLowerCase() === "unavailable") return "N/A";
+  return str;
 }
 
-function stat(value: string | number | undefined, fallback: string) {
-  return value === undefined || value === "" ? fallback : String(value);
+function isSameCompany(comp: CompanyProfile, target: CompanyProfile): boolean {
+  const candName = comp.name.toLowerCase().trim();
+  const targetName = target.name.toLowerCase().trim();
+  if (candName === targetName || candName.includes(targetName) || targetName.includes(candName)) {
+    return true;
+  }
+  if (comp.domain && target.domain) {
+    const candHost = comp.domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0].replace(/^www\./, "");
+    const targetHost = target.domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0].replace(/^www\./, "");
+    if (candHost === targetHost || candHost.includes(targetHost) || targetHost.includes(candHost)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function ReportPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const domain = searchParams.get("url") || "kalvium.in";
+  const domain = searchParams.get("url") || "";
   const includeSentiment = searchParams.get("sentiment") === "1";
   const [report, setReport] = useState<StoredReport | null>(null);
   const [toast, setToast] = useState("");
@@ -64,13 +68,28 @@ function ReportPageInner() {
   }, [domain, includeSentiment]);
 
   const state = report?.state ?? null;
-  const userCompany = displayCompany(state?.comparison?.userCompany ?? state?.userCompany, "Kalvium");
-  const competitors = useMemo(() => {
-    const realCompetitors = state?.comparison?.competitors ?? state?.competitorProfiles ?? [];
-    const fallbacks = ["Newton School", "Masai School", "Pesto Tech"];
-    return fallbacks.map((fallback, index) => displayCompany(realCompetitors[index], fallback));
-  }, [state]);
-  const reportTitle = `${userCompany.name} vs. ${competitors.length} competitors`;
+  const userCompany: CompanyProfile = state?.comparison?.userCompany ?? state?.userCompany ?? {
+    name: domain || "Target Company",
+    domain: domain || "",
+    category: "Company",
+    offeringsSummary: "",
+    stats: {
+      foundedYear: undefined,
+      employeeCount: undefined,
+      fundingTotal: undefined,
+      dataAvailability: { funding: false, revenue: false, employeeCount: false },
+    },
+  };
+
+  const competitors: CompanyProfile[] = useMemo(() => {
+    const rawList = state?.comparison?.competitors ?? state?.competitorProfiles ?? [];
+    return rawList.filter((comp) => !isSameCompany(comp, userCompany));
+  }, [state, userCompany]);
+
+  const reportTitle = competitors.length > 0
+    ? `${userCompany.name} vs. its competition`
+    : `${userCompany.name} Market Profile`;
+
   const sentiment = state?.sentiment ?? [];
   const competitorSentiment = competitors.map((company) =>
     sentiment.find((item) => item.companyName.toLowerCase() === company.name.toLowerCase())
@@ -135,45 +154,70 @@ function ReportPageInner() {
 
           <div className="report-section">
             <h2>Company profiles</h2>
-            <div className="table-wrap">
-              <table className="compare-table">
-                <thead>
-                  <tr>
-                    <th>Metric</th>
-                    <th>{userCompany.name} <span className="cite">Own site</span></th>
-                    <th>{competitors[0].name} <span className="cite">Crunchbase</span></th>
-                    <th>{competitors[1].name} <span className="cite">Tracxn</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="metric">Founded</td>
-                    <td>{stat(userCompany.stats.foundedYear, "2021")}</td>
-                    <td>{stat(competitors[0].stats.foundedYear, "2019")}</td>
-                    <td>{stat(competitors[1].stats.foundedYear, "2019")}</td>
-                  </tr>
-                  <tr>
-                    <td className="metric">Employees</td>
-                    <td>{stat(userCompany.stats.employeeCount, "150+")}</td>
-                    <td className="hi">{stat(competitors[0].stats.employeeCount, "~300")}</td>
-                    <td>{stat(competitors[1].stats.employeeCount, "~250")}</td>
-                  </tr>
-                  <tr>
-                    <td className="metric">Funding</td>
-                    <td>{stat(userCompany.stats.fundingTotal, "Undisclosed")}</td>
-                    <td className="hi">{stat(competitors[0].stats.fundingTotal, "₹120Cr")}</td>
-                    <td>{stat(competitors[1].stats.fundingTotal, "₹95Cr")}</td>
-                  </tr>
-                  <tr>
-                    <td className="metric">Model</td>
-                    <td>{userCompany.offeringsSummary || "University-partnered B.Tech"}</td>
-                    <td>{competitors[0].offeringsSummary || "Standalone bootcamp"}</td>
-                    <td>{competitors[1].offeringsSummary || "Standalone bootcamp"}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="callout"><b>Key difference —</b> {state?.comparison?.gaps?.[0]?.missingRelativeToUser?.[0] ?? `${userCompany.name} has a distinct operating model relative to the selected competitors, changing its acquisition model and cost structure.`}</div>
+            {competitors.length > 0 ? (
+              <div className="table-wrap">
+                <table className="compare-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>{userCompany.name} <span className="cite">Target</span></th>
+                      {competitors.map((comp) => (
+                        <th key={comp.name + comp.domain}>
+                          {comp.name} {comp.domain ? <span className="cite">{comp.domain}</span> : null}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="metric">Founded</td>
+                      <td>{formatStatValue(userCompany.stats.foundedYear)}</td>
+                      {competitors.map((comp) => (
+                        <td key={"founded-" + comp.name}>{formatStatValue(comp.stats.foundedYear)}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="metric">Employees</td>
+                      <td>{formatStatValue(userCompany.stats.employeeCount)}</td>
+                      {competitors.map((comp) => (
+                        <td key={"emp-" + comp.name}>{formatStatValue(comp.stats.employeeCount)}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="metric">Funding</td>
+                      <td>{formatStatValue(userCompany.stats.fundingTotal)}</td>
+                      {competitors.map((comp) => (
+                        <td key={"funding-" + comp.name}>{formatStatValue(comp.stats.fundingTotal)}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="metric">Revenue</td>
+                      <td>{formatStatValue(userCompany.stats.revenueEstimate)}</td>
+                      {competitors.map((comp) => (
+                        <td key={"rev-" + comp.name}>{formatStatValue(comp.stats.revenueEstimate)}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="metric">Offerings / Model</td>
+                      <td>{userCompany.offeringsSummary || "Target company offering"}</td>
+                      {competitors.map((comp) => (
+                        <td key={"offering-" + comp.name}>{comp.offeringsSummary || "Sourced company offering"}</td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-line bg-panel p-6 text-sm text-neutral-600">
+                No direct market competitors identified for <strong>{userCompany.name}</strong>.
+              </div>
+            )}
+
+            {state?.comparison?.gaps?.[0]?.missingRelativeToUser?.[0] ? (
+              <div className="callout">
+                <b>Key difference —</b> {state.comparison.gaps[0].missingRelativeToUser[0]}
+              </div>
+            ) : null}
           </div>
 
           {includeSentiment && (
@@ -181,15 +225,15 @@ function ReportPageInner() {
               <h2>Sentiment</h2>
               <div className="sentiment-grid">
                 <div>
-                  {competitors.slice(0, 2).map((company, index) => (
-                    <SentimentRow key={company.name} company={company.name} sentiment={competitorSentiment[index]} fallbackScore={index === 0 ? 72 : 65} />
-                  ))}
                   <SentimentRow company={userCompany.name} sentiment={sentiment.find((item) => item.companyName.toLowerCase() === userCompany.name.toLowerCase())} />
+                  {competitors.map((company, index) => (
+                    <SentimentRow key={company.name} company={company.name} sentiment={competitorSentiment[index]} />
+                  ))}
                 </div>
                 <aside className="report-aside">
                   <span className="aside-label">Coverage</span>
-                  <strong>{scoredCompetitors || 2} / 3</strong>
-                  <p>Competitors have enough public review data for a directional score.</p>
+                  <strong>{scoredCompetitors} / {competitors.length || 1}</strong>
+                  <p>Competitors with verified public review data scored.</p>
                 </aside>
               </div>
             </div>
@@ -208,8 +252,8 @@ function ReportPageInner() {
   );
 }
 
-function SentimentRow({ company, sentiment, fallbackScore }: { company: string; sentiment?: SentimentResult; fallbackScore?: number }) {
-  if (!sentiment?.dataAvailable && fallbackScore === undefined) {
+function SentimentRow({ company, sentiment }: { company: string; sentiment?: SentimentResult }) {
+  if (!sentiment?.dataAvailable) {
     return (
       <div className="sentiment-row">
         <div className="sr-top"><span className="name">{company}</span><span className="score">—</span></div>
@@ -218,7 +262,7 @@ function SentimentRow({ company, sentiment, fallbackScore }: { company: string; 
     );
   }
 
-  const score = sentiment?.sentimentScore ?? fallbackScore ?? 0;
+  const score = sentiment.sentimentScore ?? 0;
   return (
     <div className="sentiment-row">
       <div className="sr-top"><span className="name">{company}</span><span className="score">{score} / 100</span></div>

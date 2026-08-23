@@ -109,7 +109,7 @@ export default function HomePage() {
             <aside className="proof-card" aria-label="What Facts delivers">
               <span className="proof-kicker">One run delivers</span>
               <strong>3 → 1</strong>
-              <p>Three relevant competitors distilled into one clear comparison.</p>
+              <p>Top relevant market competitors distilled into one clear comparison.</p>
               <div className="proof-list">
                 <span>Verified public sources</span>
                 <span>Structured market signals</span>

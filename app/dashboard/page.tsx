@@ -25,7 +25,7 @@ const STAGES: UiStage[] = [
   { id: "lookup", label: "Looking up {domain} in the database", backendStages: [0] },
   { id: "ingest", label: "Scraping company profile", backendStages: [1, 2] },
   { id: "discover", label: "Discovering competitors", backendStages: [3] },
-  { id: "rank", label: "Ranking and selecting top 3", backendStages: [4] },
+  { id: "rank", label: "Ranking top competitor candidates", backendStages: [4] },
   { id: "scrape", label: "Scraping competitor sources", backendStages: [5] },
   { id: "extract", label: "Extracting structured profiles", backendStages: [6] },
   { id: "sentiment", label: "Scanning sentiment sources", backendStages: [8] },
@@ -68,27 +68,26 @@ function summarizePayload(stageId: StageId, payload: unknown, state?: PipelineSt
   }
   if (stageId === "scrape") {
     const count = state?.competitorsRanked?.length ?? state?.competitorProfiles.length ?? 0;
-    return `${count || 3}/3 competitors scraped across public sources.`;
+    return `${count} competitor sources scraped across public sources.`;
   }
   if (stageId === "extract") {
     const total = (state?.competitorProfiles.length ?? 0) + (state?.userCompany ? 1 : 0);
-    return `Founders, funding, headcount, and offerings extracted for all ${total || 4} companies.`;
+    return `Founders, funding, headcount, and offerings extracted for ${total} companies.`;
   }
   if (stageId === "sentiment") {
     const sentiment = state?.sentiment ?? [];
     const scored = sentiment.filter((item) => item.dataAvailable).length;
-    return `Reviews found for ${scored}/${Math.max(sentiment.length - 1, 1)} competitors.`;
+    return `Reviews scored for ${scored} competitor sources.`;
   }
   if (stageId === "compare") {
-    return asRecord ? "Comparison matrix generated across live company metrics." : "Comparison matrix generated across 6 metrics.";
+    return asRecord ? "Comparison matrix generated across live company metrics." : "Comparison matrix generated across key metrics.";
   }
   return "Stage completed.";
 }
 
 function reportTitle(state: PipelineState | null) {
-  const company = state?.comparison?.userCompany.name ?? state?.userCompany?.name ?? "Kalvium";
-  const count = state?.comparison?.competitors.length ?? state?.competitorsRanked?.length ?? 3;
-  return `${company} vs. ${count} competitors`;
+  const company = state?.comparison?.userCompany.name ?? state?.userCompany?.name ?? "Company";
+  return `${company} vs. its competition`;
 }
 
 function getChips(stageId: StageId, state: PipelineState | null) {
@@ -96,7 +95,7 @@ function getChips(stageId: StageId, state: PipelineState | null) {
     return (state?.competitorsRaw ?? []).map((item) => item.name).slice(0, 6);
   }
   if (stageId === "rank") {
-    return (state?.competitorsRanked ?? []).map((item) => item.name).slice(0, 3);
+    return (state?.competitorsRanked ?? []).map((item) => item.name).slice(0, 5);
   }
   return [];
 }
@@ -269,9 +268,9 @@ function DashboardPageInner() {
 
           <div className={`summary-panel${isComplete ? " shown" : ""}`}>
             <h3>{reportTitle(pipelineState)}</h3>
-            <div className="summary-mini-row"><span className="k">Closest match</span><span>{pipelineState?.competitorsRanked?.[0]?.name ?? "Newton School"}</span></div>
-            <div className="summary-mini-row"><span className="k">Furthest match</span><span>{pipelineState?.competitorsRanked?.[2]?.name ?? "Pesto Tech"}</span></div>
-            <div className="summary-mini-row"><span className="k">Sentiment coverage</span><span>{includeSentiment ? `${pipelineState?.sentiment?.filter((item) => item.dataAvailable).length ?? 0}/3 competitors scored` : "Not run"}</span></div>
+            <div className="summary-mini-row"><span className="k">Closest match</span><span>{pipelineState?.competitorsRanked?.[0]?.name ?? "None identified"}</span></div>
+            <div className="summary-mini-row"><span className="k">Furthest match</span><span>{pipelineState?.competitorsRanked?.[(pipelineState?.competitorsRanked?.length ?? 1) - 1]?.name ?? "None identified"}</span></div>
+            <div className="summary-mini-row"><span className="k">Sentiment coverage</span><span>{includeSentiment ? `${pipelineState?.sentiment?.filter((item) => item.dataAvailable).length ?? 0} scored` : "Not run"}</span></div>
             {error && <div className="summary-mini-row"><span className="k">Run status</span><span>{error}</span></div>}
             <div className="summary-cta"><button className="btn primary" disabled={!isComplete} onClick={openReport}>Open full report <span aria-hidden="true">↗</span></button></div>
           </div>
