@@ -11,6 +11,7 @@ export async function compareCompanies(
   logger.stageStart(STAGE, "writing company briefing markdown", { competitors: competitors.length });
 
   const markdown = formatCompaniesMarkdown(userCompany, competitors);
+  const metricsTable = buildMetricsTable(userCompany, competitors);
 
   logger.stageComplete(STAGE, "company briefing ready", {
     durationMs: Date.now() - start,
@@ -23,7 +24,8 @@ export async function compareCompanies(
     competitors,
     serviceOverlap: [],
     gaps: [],
-    markdown
+    markdown,
+    metricsTable
   };
 }
 
@@ -44,23 +46,52 @@ function formatOneCompany(company: CompanyProfile, heading: string): string {
   const lines = [
     `## ${heading}: ${company.name}`,
     "",
-    `- **Domain:** ${company.domain}`,
-    `- **Category:** ${company.category || "unknown"}`,
-    `- **Offerings:** ${company.offeringsSummary || "not listed"}`
+    `- **Domain:** ${company.domain || "N/A"}`,
+    `- **Category:** ${company.category || "N/A"}`,
+    `- **Offerings:** ${company.offeringsSummary || "N/A"}`
   ];
 
   if (company.founders?.length) {
     lines.push(`- **Founders:** ${company.founders.join(", ")}`);
   }
-  if (stats.foundedYear) {
-    lines.push(`- **Founded:** ${stats.foundedYear}`);
-  }
-  lines.push(`- **Funding:** ${stats.fundingTotal || "not listed"}`);
-  lines.push(`- **Employees:** ${stats.employeeCount || "not listed"}`);
-  lines.push(`- **Revenue:** ${stats.revenueEstimate || "not listed"}`);
+  lines.push(`- **Founded Year:** ${stats.foundedYear ? stats.foundedYear : "N/A"}`);
+  lines.push(`- **Funding Raised:** ${stats.fundingTotal?.trim() ? stats.fundingTotal : "N/A"}`);
+  lines.push(`- **Employees Count:** ${stats.employeeCount?.trim() ? stats.employeeCount : "N/A"}`);
+  lines.push(`- **Revenue Estimate:** ${stats.revenueEstimate?.trim() ? stats.revenueEstimate : "N/A"}`);
   if (company.searchIntentPhrase) {
     lines.push(`- **Search phrase:** ${company.searchIntentPhrase}`);
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function buildMetricsTable(userCompany: CompanyProfile, competitors: CompanyProfile[]): string {
+  const allCompanies = [userCompany, ...competitors];
+  const headers = ["Metric", "Your Company", ...competitors.map((c) => c.name)];
+
+  const rows = [
+    ["Founded Year", formatValue(userCompany.stats.foundedYear), ...competitors.map((c) => formatValue(c.stats.foundedYear))],
+    ["Employees", formatValue(userCompany.stats.employeeCount), ...competitors.map((c) => formatValue(c.stats.employeeCount))],
+    ["Funding Raised", formatValue(userCompany.stats.fundingTotal), ...competitors.map((c) => formatValue(c.stats.fundingTotal))],
+    ["Revenue Estimate", formatValue(userCompany.stats.revenueEstimate), ...competitors.map((c) => formatValue(c.stats.revenueEstimate))],
+    ["Founders", formatValue(userCompany.founders?.join(", ")), ...competitors.map((c) => formatValue(c.founders?.join(", ")))],
+    ["Category", formatValue(userCompany.category), ...competitors.map((c) => formatValue(c.category))],
+  ];
+
+  const colWidths = headers.map((_, colIdx) =>
+    Math.max(headers[colIdx].length, ...rows.map((row) => row[colIdx].length))
+  );
+
+  const sep = "+" + colWidths.map((w) => "-".repeat(w + 2)).join("+") + "+";
+  const headerRow = "| " + headers.map((h, i) => h.padEnd(colWidths[i])).join(" | ") + " |";
+  const dataRows = rows.map((row) => "| " + row.map((c, i) => c.padEnd(colWidths[i])).join(" | ") + " |");
+
+  return [sep, headerRow, sep, ...dataRows, sep].join("\n");
+}
+
+function formatValue(value: string | number | undefined | null): string {
+  if (value === undefined || value === null || value === "") {
+    return "N/A";
+  }
+  return String(value);
 }

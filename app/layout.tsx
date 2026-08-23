@@ -1,23 +1,32 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Outfit } from "next/font/google";
+import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
-const outfit = Outfit({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-outfit",
-  display: "swap"
+  variable: "--font-display",
+  display: "swap",
+  weight: ["500", "600", "700"],
 });
 
-const plexMono = IBM_Plex_Mono({
+const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
   weight: ["400", "500"],
-  variable: "--font-plex-mono",
-  display: "swap"
 });
 
 export const metadata: Metadata = {
   title: "Facts",
-  description: "Competitor intelligence grounded in live company pages"
+  description: "Competitor intelligence grounded in live company pages",
 };
 
 export default function RootLayout({
@@ -27,8 +36,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${outfit.variable} ${plexMono.variable} font-sans antialiased`} suppressHydrationWarning>
-        {children}
+      <body
+        className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable} font-body antialiased`}
+        suppressHydrationWarning
+      >
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

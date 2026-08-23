@@ -12,7 +12,7 @@ export function ComparisonTable({ comparison }: ComparisonTableProps) {
       <div className="border-b border-line px-6 py-4">
         <h3 className="font-semibold text-ink">Company Comparison Matrix</h3>
         <p className="mt-0.5 text-xs text-neutral-500">
-          Side-by-side comparison of company offerings and identified feature gaps.
+          Side-by-side comparison of company offerings, key metrics, and identified feature gaps.
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -20,7 +20,10 @@ export function ComparisonTable({ comparison }: ComparisonTableProps) {
           <thead className="bg-paper text-xs uppercase tracking-wider text-neutral-500">
             <tr>
               <th className="px-6 py-3.5 font-semibold">Company</th>
-              <th className="px-6 py-3.5 font-semibold">Category</th>
+              <th className="px-4 py-3.5 font-semibold">Founded</th>
+              <th className="px-4 py-3.5 font-semibold">Funding</th>
+              <th className="px-4 py-3.5 font-semibold">Employees</th>
+              <th className="px-4 py-3.5 font-semibold">Revenue</th>
               <th className="px-6 py-3.5 font-semibold">Offerings Summary</th>
               <th className="px-6 py-3.5 font-semibold">Gaps Relative to User</th>
             </tr>
@@ -29,19 +32,36 @@ export function ComparisonTable({ comparison }: ComparisonTableProps) {
             {companies.map((company) => {
               const gap = comparison.gaps.find((item) => item.company === company.name);
               const isReference = company.name === comparison.userCompany.name;
+              const stats = company.stats;
               return (
                 <tr className="align-top transition hover:bg-paper/40" key={company.name}>
                   <td className="px-6 py-4">
                     <div className="font-semibold text-ink">{company.name}</div>
+                    <div className="text-xs text-neutral-500">{company.domain || "N/A"}</div>
                     {isReference ? (
-                      <span className="mt-1 inline-block rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
+                      <span className="mt-1.5 inline-block rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
                         User Reference
                       </span>
-                    ) : null}
+                    ) : (
+                      <span className="mt-1 inline-block text-xs text-neutral-500">
+                        {company.category || "N/A"}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-6 py-4 text-neutral-700">{company.category}</td>
-                  <td className="max-w-md px-6 py-4 leading-6 text-neutral-700">
-                    {company.offeringsSummary}
+                  <td className="px-4 py-4 text-xs font-medium text-ink">
+                    {stats.foundedYear ? stats.foundedYear : "N/A"}
+                  </td>
+                  <td className="px-4 py-4 text-xs font-medium text-ink">
+                    {stats.fundingTotal?.trim() ? stats.fundingTotal : "N/A"}
+                  </td>
+                  <td className="px-4 py-4 text-xs font-medium text-ink">
+                    {stats.employeeCount?.trim() ? stats.employeeCount : "N/A"}
+                  </td>
+                  <td className="px-4 py-4 text-xs font-medium text-ink">
+                    {stats.revenueEstimate?.trim() ? stats.revenueEstimate : "N/A"}
+                  </td>
+                  <td className="max-w-xs px-6 py-4 leading-6 text-neutral-700">
+                    {company.offeringsSummary || "N/A"}
                   </td>
                   <td className="px-6 py-4 text-neutral-700">
                     {gap?.missingRelativeToUser.length ? (

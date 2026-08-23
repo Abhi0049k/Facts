@@ -117,39 +117,18 @@ export async function runPipeline(
   }
 
   if (!lookup.found) {
-    const message = lookup.domain
-      ? `${lookup.domain} is not in the company database. Add this company before running a briefing.`
-      : "This company is not in the company database. Add this company before running a briefing.";
-    logger.pipelineComplete(input.runId, Date.now() - startTime, {
-      completedStages,
-      halted: "database_miss",
+    logger.debug("Pipeline", "Company not in database cache, continuing with live scraping & discovery", {
       domain: lookup.domain
     });
-    await onEvent({
-      type: "halted",
-      stage: 0,
-      siteKind: "not_a_company",
-      message,
-      payload: {
-        databaseMatch: false,
-        domain: lookup.domain
-      },
-      completedStages
-    });
-    return {
-      runId: input.runId,
-      state,
-      completedStages,
-      halted: true,
-      haltMessage: message,
-      databaseMatch: false
-    };
   }
 
   if (!hasStage(completedStages, 1) || !rawContent) {
     invalidateFrom(1);
     await emitStage(onEvent, 1, "start");
-    const userCompanySources = uniqueSources([...lookup.infoUrls, ...lookup.sentimentUrls]);
+    const userCompanySources = uniqueSources([
+      ...(lookup.found ? lookup.infoUrls : []),
+      ...(lookup.found ? lookup.sentimentUrls : [])
+    ]);
     rawContent = await ingestUserCompany(
       input.companyUrl,
       userCompanySources

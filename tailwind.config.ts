@@ -8,22 +8,47 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "var(--ink)",
-        paper: "var(--paper)",
-        panel: "var(--panel)",
-        line: "var(--line)",
-        muted: "var(--muted)",
-        accent: "var(--accent)",
-        amber: "var(--amber)",
-        coral: "var(--coral)"
+        royal: {
+          DEFAULT: "var(--royal)",
+          dark: "var(--royal-dark)",
+          soft: "var(--royal-soft)",
+          wash: "var(--royal-wash)",
+        },
+        ink: {
+          DEFAULT: "var(--ink)",
+          soft: "var(--ink-soft)",
+        },
+        muted: {
+          DEFAULT: "var(--muted)",
+          light: "var(--muted-light)",
+        },
+        surface: {
+          DEFAULT: "var(--surface)",
+          alt: "var(--surface-alt)",
+        },
+        line: {
+          DEFAULT: "var(--line)",
+          strong: "var(--line-strong)",
+        },
+        verified: {
+          DEFAULT: "var(--verified)",
+          soft: "var(--verified-soft)",
+        },
+        danger: "var(--danger)",
       },
       fontFamily: {
-        sans: ["var(--font-outfit)", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"]
+        display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],
+        body: ["var(--font-body)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
+      borderRadius: {
+        DEFAULT: "var(--radius)",
+        sm: "var(--radius-sm)",
       },
       boxShadow: {
-        panel: "0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent)"
-      }
+        DEFAULT: "var(--shadow)",
+        soft: "var(--shadow-soft)",
+      },
     }
   },
   plugins: []

@@ -161,7 +161,23 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
     }
     const inner = unwrapped._def?.type as z.ZodTypeAny | undefined;
     if (inner) {
+      const innerShape = getZodObjectShape(inner);
       const mapped = list.map((item) => {
+        // First try: extract only the schema-defined fields
+        if (innerShape && Object.keys(innerShape).length > 0) {
+          const extracted = extractSchemaFields(item, innerShape);
+          if (inner.safeParse(extracted).success) {
+            logger.debug("LLM", "extracted schema fields from item", { fields: Object.keys(innerShape) });
+            return extracted;
+          }
+        }
+        // Second try: for simple {name, domain} schemas, extract those directly
+        const nameDomain = extractNameDomain(item);
+        if (nameDomain && inner.safeParse(nameDomain).success) {
+          logger.debug("LLM", "extracted name/domain from item");
+          return nameDomain;
+        }
+        // Third try: repairCompanyProfile (for full CompanyProfile schemas)
         const repaired = repairCompanyProfile(item);
         if (repaired && inner.safeParse(repaired).success) {
           logger.debug("LLM", "repaired nested company fields into a profile");
@@ -182,6 +198,41 @@ function coerceForSchema(parsed: unknown, schema: z.ZodTypeAny): unknown {
   }
 
   return parsed;
+}
+
+function extractNameDomain(item: unknown): { name: string; domain: string } | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+  const record = item as Record<string, unknown>;
+  const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : undefined;
+  const domain = typeof record.domain === "string" && record.domain.trim() ? record.domain.trim() : undefined;
+  if (name && domain) {
+    return { name, domain };
+  }
+  return null;
+}
+
+function getZodObjectShape(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> | null {
+  const unwrapped = unwrapZod(schema);
+  if (unwrapped._def?.typeName === "ZodObject") {
+    return unwrapped._def.shape() as Record<string, z.ZodTypeAny>;
+  }
+  return null;
+}
+
+function extractSchemaFields(item: unknown, shape: Record<string, z.ZodTypeAny>): Record<string, unknown> {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return {};
+  }
+  const record = item as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, zodType] of Object.entries(shape)) {
+    if (key in record) {
+      result[key] = record[key];
+    }
+  }
+  return result;
 }
 
 function coerceItem(item: unknown, schema: z.ZodTypeAny): unknown {

@@ -53,6 +53,14 @@ export async function tavilySearch(query: string): Promise<TavilyResult[]> {
   }
 }
 
+export async function tavilySearchCompanyMetrics(
+  companyName: string,
+  domain?: string
+): Promise<TavilyResult[]> {
+  const query = `${companyName} ${domain ? domain : ""} founded year funding raised employees revenue`;
+  return tavilySearch(query);
+}
+
 function mockTavily(query: string): TavilyResult[] {
   const candidates = [
     ["AlphaSense", "https://www.alpha-sense.com"],

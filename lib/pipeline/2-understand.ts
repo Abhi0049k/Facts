@@ -4,6 +4,7 @@ import { repairCompanyProfile } from "@/lib/clients/normalize-json";
 import { emitPipelineNotice } from "@/lib/pipeline/notices";
 import { haltMessage, siteKindHint, type SiteKind } from "@/lib/pipeline/classify-site";
 import { compactSourceText } from "@/lib/readable-scrape";
+import { tavilySearchCompanyMetrics } from "@/lib/clients/tavily";
 import { type CompanyProfile } from "@/lib/types";
 
 const STAGE = "Stage2-UnderstandCompany";
@@ -38,6 +39,26 @@ export async function understandCompany(
     return { siteKind, reason, profile: null, haltMessage: haltMessage(siteKind, reason) };
   }
 
+  // Fetch metrics from Tavily for the user's company
+  let searchSnippets = "";
+  if (process.env.TAVILY_API_KEY?.trim()) {
+    try {
+      const knownName = options?.knownName;
+      const searchResults = await tavilySearchCompanyMetrics(knownName || domain, domain);
+      if (searchResults.length > 0) {
+        searchSnippets = searchResults
+          .map((r) => `${r.title}: ${r.content}`)
+          .join("\n")
+          .slice(0, 1500);
+      }
+    } catch (err) {
+      logger.stageWarn(STAGE, "Tavily metrics search fallback failed", {
+        domain,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
   const fallback = scrapeFallbackProfile(rawContent, domain, options?.knownName);
   let siteKind: SiteKind = "company";
   let reason = options?.knownName
@@ -56,6 +77,8 @@ Known name: ${options?.knownName ?? "unknown"}
 Website content:
 ${rawContent.slice(0, 12_000)}
 
+${searchSnippets ? `Web search metrics:\n${searchSnippets}\n` : ""}
+
 Return:
 {
   "siteKind": "company",
@@ -68,6 +91,10 @@ Return:
     "searchIntentPhrase": "industry phrase without the company name",
     "founders": [],
     "stats": {
+      "fundingTotal": "only if sourced",
+      "employeeCount": "only if sourced",
+      "revenueEstimate": "only if sourced",
+      "foundedYear": 2014,
       "dataAvailability": { "funding": false, "revenue": false, "employeeCount": false }
     }
   }

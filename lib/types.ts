@@ -24,6 +24,7 @@ export interface ComparisonResult {
   serviceOverlap: { service: string; companies: string[] }[];
   gaps: { company: string; missingRelativeToUser: string[] }[];
   markdown?: string;
+  metricsTable?: string;
 }
 
 export interface SentimentResult {

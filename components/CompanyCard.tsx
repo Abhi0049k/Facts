@@ -62,7 +62,7 @@ function Stat({
         <span className="[&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span>
         {label}
       </div>
-      <dd className="mt-1 font-semibold text-ink">{value ?? "Unavailable"}</dd>
+      <dd className="mt-1 font-semibold text-ink">{value && value.trim() ? value : "N/A"}</dd>
     </div>
   );
 }

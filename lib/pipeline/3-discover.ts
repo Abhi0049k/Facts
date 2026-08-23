@@ -1,7 +1,7 @@
 import { failStage, logger } from "@/lib/clients/logger";
 import { jsonCall } from "@/lib/clients/llm";
 import { asCompetitorCandidates } from "@/lib/clients/normalize-json";
-import { tavilySearch } from "@/lib/clients/tavily";
+import { tavilySearch, tavilySearchCompanyMetrics } from "@/lib/clients/tavily";
 import { PipelineStageError, type CompanyProfile } from "@/lib/types";
 
 const STAGE = "Stage3-DiscoverCompetitors";
