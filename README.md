@@ -2,7 +2,46 @@
 
 Facts is a Next.js full-stack web application for automated competitor discovery, comparison, and market research from a single company URL. Tagline: **AI-powered competitor intelligence, grounded in real data**.
 
-## Architecture overview
+## System Architecture
+
+```mermaid
+graph TD
+    A[User] -->|1. Enter URL| B[Home Page /]
+    B -->|2. Submit URL| C[Dashboard /dashboard?url=...]
+    C -->|3. SSE Stream| D[API /api/analyze]
+    D -->|Pipeline| E[Pipeline Orchestrator]
+    
+    E --> F[Stage 0: Lookup]
+    F -->|DB Hit| G[Cached Company Data]
+    F -->|DB Miss| H[Stage 1: Ingest]
+    H --> I[Bright Data Web Unlocker]
+    I --> J[Stage 2: Understand]
+    J --> K[LLM (Ollama)]
+    K --> L[Stage 3: Discover]
+    L --> M[Tavily Search + LLM]
+    M --> N[Stage 4: Rank]
+    N --> O[LLM Ranking]
+    O --> P[Stage 5: Scrape]
+    P --> Q[Bright Data Datasets v3]
+    Q --> R[Stage 6: Extract]
+    R --> S[LLM Extraction]
+    S --> T[Stage 7: Compare]
+    T --> U[LLM Comparison]
+    U --> V[Stage 8: Sentiment]
+    V --> W[Tavily + LLM]
+    
+    E --> X[SSE Events]
+    X --> C[Dashboard UI]
+    C --> Y[Summary Panel]
+    C --> Z[Results Page /results]
+    
+    style A fill:#f5f8ff,stroke:#2457d6
+    style E fill:#e9efff,stroke:#2457d6
+    style C fill:#e8f7f2,stroke:#168a71
+    style Z fill:#e8f7f2,stroke:#168a71
+```
+
+## Architecture Overview
 
 Facts uses a fixed-sequence pipeline, not an autonomous agent. Each stage takes a defined input, returns structured JSON, and writes to a shared `PipelineState`. This keeps behavior deterministic, controls external API cost, and makes failures easier to reason about.
 
@@ -35,7 +74,7 @@ Facts uses a fixed-sequence pipeline, not an autonomous agent. Each stage takes 
    company names/domains -> Tavily review search + LLM scoring -> SentimentResult[]
 ```
 
-## Folder structure
+## Folder Structure
 
 ```text
 facts/
@@ -44,26 +83,223 @@ facts/
 │   ├── dashboard/
 │   │   └── page.tsx                # Pipeline progress and analysis run
 │   ├── results/
-│   │   └── page.tsx                # Comparison report
+│   │   └── page.tsx                # Comparison report (redirects to dashboard)
 │   ├── api/
-│   │   └── analyze/
-│   │       └── route.ts            # Main orchestrating endpoint
-│   └── layout.tsx                  # Root layout and metadata
+│   │   ├── analyze/
+│   │   │   └── route.ts            # Main orchestrating endpoint (SSE)
+│   │   └── cache/
+│   │       └── clear/
+│   │           └── route.ts        # Cache clearing endpoint
+│   ├── layout.tsx                  # Root layout, fonts, providers
+│   ├── page.tsx                    # Home page
+│   ├── providers.tsx               # Context providers (App, Toast, Pipeline)
+│   ├── globals.css                 # Design tokens, base styles
+│   └── providers.tsx               # Context providers wrapper
+├── components/
+│   ├── layout/                     # Layout components
+│   │   ├── PageShell.tsx
+│   │   └── TopNav.tsx
+│   ├── providers/                  # Context providers
+│   │   ├── AppProvider.tsx         # App state (page, domain, sentiment)
+│   │   └── PipelineProvider.tsx    # Pipeline state & animation
+│   ├── ui/                         # Reusable UI primitives
+│   │   ├── Badge.tsx
+│   │   ├── Badge.tsx
+│   │   ├── Button.tsx
+│   │   ├── Callout.tsx
+│   │   ├── Card.tsx
+│   │   ├── ChipRow.tsx
+│   │   ├── Eyebrow.tsx
+│   │   ├── Input.tsx
+│   │   ├── MiniChip.tsx
+│   │   ├── Pill.tsx
+│   │   ├── ProofCard.tsx
+│   │   ├── Sentiment.tsx
+│   │   ├── StageRow.tsx
+│   │   ├── SummaryCards.tsx
+│   │   ├── SummaryPanel.tsx
+│   │   ├── Table.tsx
+│   │   ├── Toggle.tsx
+│   │   ├── Toast.tsx
+│   │   ├── TopNav.tsx
+│   │   └── ProofCard.tsx
+│   ├── providers/                  # Context providers
+│   │   ├── AppProvider.tsx
+│   │   └── PipelineProvider.tsx
+│   ├── layout/                     # Layout components
+│   │   ├── PageShell.tsx
+│   │   └── TopNav.tsx
+│   ├── ui/                         # Reusable UI primitives
+│   │   ├── Badge.tsx
+│   │   ├── Button.tsx
+│   │   ├── Callout.tsx
+│   │   ├── Card.tsx
+│   │   ├── ChipRow.tsx
+│   │   ├── Eyebrow.tsx
+│   │   ├── Input.tsx
+│   │   ├── MiniChip.tsx
+│   │   ├── Pill.tsx
+│   │   ├── ProofCard.tsx
+│   │   ├── Sentiment.tsx
+│   │   ├── StageRow.tsx
+│   │   ├── SummaryCards.tsx
+│   │   ├── SummaryPanel.tsx
+│   │   ├── Table.tsx
+│   │   ├── Toggle.tsx
+│   │   ├── Toast.tsx
+│   │   ├── TopNav.tsx
+│   │   └── ProofCard.tsx
+│   ├── ComparisonChart.tsx
+│   ├── ComparisonTable.tsx
+│   ├── CompanyCard.tsx
+│   ├── LimitedDataBanner.tsx
+│   ├── MarkdownReport.tsx
+│   ├── PipelineProgress.tsx
+│   ├── SiteHeader.tsx
+│   ├── StageOutputList.tsx
+│   ├── UrlEntry.tsx
+│   └── CompanyCard.tsx
 ├── lib/                            # Shared backend services and types
 │   ├── pipeline/                   # One pure pipeline function per stage
-│   ├── clients/                    # Bright Data, Tavily, and LLM wrappers
-│   └── types.ts                    # Shared TypeScript schemas
-├── components/                     # Dashboard cards, charts, progress, and tables
+│   │   ├── 0-lookup.ts
+│   │   ├── 1-ingest.ts
+│   │   ├── 2-understand.ts
+│   │   ├── 3-discover.ts
+│   │   ├── 4-rank.ts
+│   │   ├── 5-scrape-competitors.ts
+│   │   ├── 6-extract.ts
+│   │   ├── 7-compare.ts
+│   │   ├── 8-sentiment.ts
+│   │   ├── cache.ts
+│   │   ├── classify-site.ts
+│   │   ├── enrichment.ts
+│   │   ├── notices.ts
+│   │   ├── pipeline-events.ts
+│   │   └── run.ts
+│   ├── clients/                    # External service clients
+│   │   ├── brightdata.ts
+│   │   ├── llm.ts
+│   │   ├── logger.ts
+│   │   ├── normalize-json.ts
+│   │   ├── prisma.ts
+│   │   ├── supabase.ts
+│   │   ├── tavily.ts
+│   │   └── normalize-json.ts
+│   ├── providers/                  # Context providers
+│   │   ├── AppProvider.tsx
+│   │   └── PipelineProvider.tsx
+│   ├── pipeline/                   # Pipeline orchestration
+│   │   ├── 0-lookup.ts
+│   │   ├── 1-ingest.ts
+│   │   ├── 2-understand.ts
+│   │   ├── 3-discover.ts
+│   │   ├── 4-rank.ts
+│   │   ├── 5-scrape-competitors.ts
+│   │   ├── 6-extract.ts
+│   │   ├── 7-compare.ts
+│   │   ├── 8-sentiment.ts
+│   │   ├── cache.ts
+│   │   ├── classify-site.ts
+│   │   ├── enrichment.ts
+│   │   ├── notices.ts
+│   │   ├── pipeline-events.ts
+│   │   └── run.ts
+│   ├── clients/                    # External service clients
+│   │   ├── brightdata.ts
+│   │   ├── llm.ts
+│   │   ├── logger.ts
+│   │   ├── normalize-json.ts
+│   │   ├── prisma.ts
+│   │   ├── supabase.ts
+│   │   ├── tavily.ts
+│   │   └── normalize-json.ts
+│   ├── providers/                  # Context providers
+│   │   ├── AppProvider.tsx
+│   │   └── PipelineProvider.tsx
+│   ├── pipeline/                   # Pipeline stages
+│   │   ├── 0-lookup.ts
+│   │   ├── 1-ingest.ts
+│   │   ├── 2-understand.ts
+│   │   ├── 3-discover.ts
+│   │   ├── 4-rank.ts
+│   │   ├── 5-scrape-competitors.ts
+│   │   ├── 6-extract.ts
+│   │   ├── 7-compare.ts
+│   │   ├── 8-sentiment.ts
+│   │   ├── cache.ts
+│   │   ├── classify-site.ts
+│   │   ├── enrichment.ts
+│   │   ├── notices.ts
+│   │   ├── pipeline-events.ts
+│   │   └── run.ts
+│   ├── clients/                    # External service clients
+│   │   ├── brightdata.ts
+│   │   ├── llm.ts
+│   │   ├── logger.ts
+│   │   ├── normalize-json.ts
+│   │   ├── prisma.ts
+│   │   ├── supabase.ts
+│   │   ├── tavily.ts
+│   │   └── normalize-json.ts
+│   ├── providers/                  # Context providers
+│   │   ├── AppProvider.tsx
+│   │   └── PipelineProvider.tsx
+│   ├── pipeline/                   # Pipeline stages
+│   │   ├── 0-lookup.ts
+│   │   ├── 1-ingest.ts
+│   │   ├── 2-understand.ts
+│   │   ├── 3-discover.ts
+│   │   ├── 4-rank.ts
+│   │   ├── 5-scrape-competitors.ts
+│   │   ├── 6-extract.ts
+│   │   ├── 7-compare.ts
+│   │   ├── 8-sentiment.ts
+│   │   ├── cache.ts
+│   │   ├── classify-site.ts
+│   │   ├── enrichment.ts
+│   │   ├── notices.ts
+│   │   ├── pipeline-events.ts
+│   │   └── run.ts
+│   ├── types.ts                    # Shared TypeScript schemas
+│   ├── utils.ts                    # Utility functions (cn, etc.)
+│   ├── client/                     # Client-side utilities
+│   │   └── read-analyze-stream.ts
+│   ├── pipeline-events.ts          # SSE event types
+│   ├── readable-scrape.ts          # Scrape text cleaning
+│   ├── stage-number.ts             # Stage numbering utilities
+│   └── normalize-domain.ts         # Domain normalization
 ├── prisma/                         # Company cache schema and migrations
+│   ├── schema.prisma
+│   └── migrations/
 ├── data/                           # Indian company CSV batches (imported into Postgres)
-├── scripts/                        # CSV import and Bright Data tests
+├── scripts/                        # CSV import, Bright Data tests, screenshots
+│   ├── import-companies.ts
+│   ├── import-linkedin-xlsx.ts
+│   ├── test-brightdata.ts
+│   └── take-screenshots.ts
 ├── public/
-│   └── screenshots/                # Placeholder screenshot assets
-├── .env.example                    # Required environment variables
+│   ├── images/
+│   │   ├── hero-desk.png
+│   │   └── method-paper.png
+│   └── screenshots/                # Application screenshots
+│       ├── landing.png
+│       ├── progress.png
+│       └── results.png
+├── .env.example                    # Required environment variables template
+├── .env.local                      # Local environment variables (gitignored)
+├── .env                            # Environment variables (gitignored)
+├── .gitignore
+├── next.config.ts
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+├── tailwind.config.ts
+├── postcss.config.mjs
+├── next-env.d.ts
 └── README.md                       # Project documentation
 ```
 
-## Setup instructions
+## Setup Instructions
 
 Create a `.env.local` file using `.env.example` as the template:
 
@@ -108,22 +344,24 @@ npx tsx scripts/import-companies.ts data/indian_origin_organisations_batch_002.c
 
 | URL | File | What it does |
 | --- | --- | --- |
-| `GET /` | `app/page.tsx` | Home. Paste a company URL. Form lives in `components/UrlEntry.tsx`. |
+| `GET /` | `app/page.tsx` | Home. Paste a company URL. |
 | `GET /dashboard` | `app/dashboard/page.tsx` | Live pipeline. Reads `?url=` and optional `?sentiment=1`, then POST `/api/analyze`. |
-| `GET /results` | `app/results/page.tsx` | Comparison report from `localStorage` key `facts:last-analysis`. |
+| `GET /results` | `app/results/page.tsx` | Redirects to dashboard with URL params. |
 | `POST /api/analyze` | `app/api/analyze/route.ts` | SSE endpoint. Normalizes the URL, runs `lib/pipeline/run.ts`, streams stage events. |
+| `POST /api/cache/clear` | `app/api/cache/clear/route.ts` | Clears workflow cache. |
 
-Shared chrome: `app/layout.tsx` (fonts, metadata), `components/SiteHeader.tsx`.
+Shared chrome: `app/layout.tsx` (fonts, metadata), `components/layout/TopNav.tsx`.
 
-## Which file does what
+## Which File Does What
 
 ### Pages and API
 
-- `app/layout.tsx`: root HTML, Outfit font, global CSS.
-- `app/page.tsx`: marketing home and URL entry.
-- `app/dashboard/page.tsx`: progress, scraped text, stage payloads, halt messages.
-- `app/results/page.tsx`: cards, overlap charts, comparison table.
+- `app/layout.tsx`: root HTML, fonts, global CSS, providers.
+- `app/page.tsx`: marketing home and URL entry form.
+- `app/dashboard/page.tsx`: live pipeline progress, animated stages, summary panel.
+- `app/results/page.tsx`: redirects to dashboard with URL params.
 - `app/api/analyze/route.ts`: `POST /api/analyze` SSE (`text/event-stream`).
+- `app/api/cache/clear/route.ts`: cache clearing endpoint.
 
 ### Pipeline (one stage per file)
 
@@ -134,33 +372,35 @@ Shared chrome: `app/layout.tsx` (fonts, metadata), `components/SiteHeader.tsx`.
 - `lib/pipeline/2-understand.ts`: LLM reads the scrape, sets `siteKind` (`company`, `personal_profile`, `not_a_company`), and only then builds a `CompanyProfile`.
 - `lib/pipeline/3-discover.ts`: candidate rivals from the local model plus optional Tavily.
 - `lib/pipeline/4-rank.ts`: top five domains.
-- `lib/pipeline/5-scrape-competitors.ts`: Unlocker homepages plus Crunchbase/LinkedIn/Tofler datasets.
+- `lib/pipeline/5-scrape-competitors.ts`: Unlocker homepages plus Crunchbase/LinkedIn/Tracxn/Tofler datasets.
 - `lib/pipeline/6-extract.ts`: competitor `CompanyProfile[]`.
 - `lib/pipeline/7-compare.ts`: overlap and gaps.
 - `lib/pipeline/8-sentiment.ts`: known sentiment URLs from the database when present; otherwise Tavily. Empty verified list reports "No sentiment sources available for this company."
 
-### Clients and UI helpers
+### Clients and UI Helpers
 
 - `lib/clients/brightdata.ts`: Unlocker, Datasets v3, DCA collectors.
-- `lib/clients/llm.ts`: Ollama JSON calls.
+- `lib/clients/llm.ts`: Ollama JSON calls with structured output validation.
 - `lib/clients/tavily.ts`: web search.
 - `lib/clients/prisma.ts`: Prisma singleton for Stage 0 lookup.
 - `lib/clients/normalize-json.ts`: unwrap messy LLM lists.
 - `lib/pipeline-events.ts`: SSE event types (`stage`, `halted`, `done`, `error`).
 - `lib/client/read-analyze-stream.ts`: browser SSE parser.
 - `lib/types.ts`: shared TypeScript types.
-- `components/PipelineProgress.tsx`: stage grid.
-- `components/StageOutputList.tsx`: scraped text and JSON handed to the next stage.
-- `components/CompanyCard.tsx`, `ComparisonChart.tsx`, `ComparisonTable.tsx`: results UI.
+- `components/ui/StageRow.tsx`: animated pipeline stage row.
+- `components/ui/ProofCard.tsx`: side proof card for home page.
+- `components/ui/SummaryPanel.tsx`: completion summary with CTA.
+- `components/ui/ProofCard.tsx`: side proof card for home page.
+- `components/ui/Sentiment.tsx`: sentiment visualization components.
 
-### How company vs person is decided
+### How Company vs Person is Decided
 
 1. Stage 1 only scrapes. The dashboard shows that scrape (truncated if long).
 2. Stage 2 combines the URL hint with the scrape. A LinkedIn `/in/` URL, a personal portfolio, or a Wikipedia article is not treated as a company.
 3. If `siteKind` is `personal_profile` or `not_a_company`, the stream sends `halted` and later stages do not run.
 4. If it is a `company`, discovery continues as before.
 
-The LLM pipeline uses LangChain with a local Ollama/Qwen model. Bright Data needs an API token plus a Web Unlocker zone (homepages) and/or dataset IDs (Crunchbase, LinkedIn).
+The LLM pipeline uses LangChain with a local Ollama model. Bright Data needs an API token plus a Web Unlocker zone (homepages) and/or dataset IDs (Crunchbase, LinkedIn).
 
 ## Setting up Bright Data
 
@@ -195,26 +435,30 @@ This hits Kalvium by default (`BRIGHT_DATA_TEST_URL` to override), prints the ma
 
 A Cursor MCP SSE URL (`.cursor/mcp.json`, gitignored) is only for the IDE agent. The Facts pipeline does not call MCP.
 
-## Pipeline stage reference
+## Pipeline Stage Reference
 
-| Stage | Input | Output | External service |
+| Stage | Input | Output | External Service |
 | --- | --- | --- | --- |
 | 1. Ingest User Company | Company URL | `rawContent: string` (shown on the dashboard) | Bright Data Web Unlocker |
-| 2. Understand Company | scrape + URL hint | `siteKind` + `CompanyProfile` or halt | LLM |
+| 2. Understand Company | scrape + URL hint | `siteKind` + `CompanyProfile` or halt | LLM (Ollama) |
 | 3. Discover Competitors | `searchIntentPhrase` | `{ name, domain? }[]` | LLM + Tavily |
 | 4. Rank & Select Competitors | Raw candidates + `CompanyProfile` | `Competitor[]` max 5 | LLM |
-| 5. Scrape Competitors | Competitor domains | Raw content per competitor/source | Unlocker + Datasets v3 |
+| 5. Scrape Competitors | Competitor domains | Raw content per competitor/source | Bright Data Datasets v3 |
 | 6. Extract Structured Data | Competitor source content | `CompanyProfile[]` | LLM |
 | 7. Comparison | User profile + competitor profiles | `ComparisonResult` | LLM |
 | 8. Sentiment Optional | Company name + domain | `SentimentResult[]` | Tavily + LLM |
 
 ## Screenshots
 
+### Home Page
 ![Landing page](./public/screenshots/landing.png)
-![Pipeline in progress](./public/screenshots/progress.png)
-![Results dashboard](./public/screenshots/results.png)
-![Comparison charts](./public/screenshots/charts.png)
 
-## Known limitations
+### Pipeline in Progress
+![Pipeline in progress](./public/screenshots/progress.png)
+
+### Results Dashboard
+![Results dashboard](./public/screenshots/results.png)
+
+## Known Limitations
 
 Financial and revenue data is often unavailable for smaller private companies, especially when public MCA-style filings or funding databases do not expose usable details. Sentiment analysis is optional and depends on public review source availability; when evidence is sparse, Facts returns an explicit insufficient-data state rather than forcing a score.
