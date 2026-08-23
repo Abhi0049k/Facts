@@ -141,9 +141,9 @@ TAVILY_API_KEY=your_tavily_api_key
 
 # Bright Data API Integration
 BRIGHT_DATA_API_TOKEN=your_brightdata_token
-BRIGHT_DATA_WEB_UNLOCKER_ZONE=cli_unlocker
-BRIGHT_DATA_COLLECTOR_LINKEDIN=gd_l1vikfnt1wgvvqz95w
-BRIGHT_DATA_COLLECTOR_CRUNCHBASE=gd_l1vijqt9jfj7olije
+BRIGHT_DATA_WEB_UNLOCKER_ZONE=your_unlocker_zone_name
+BRIGHT_DATA_COLLECTOR_LINKEDIN=your_linkedin_dataset_id
+BRIGHT_DATA_COLLECTOR_CRUNCHBASE=your_crunchbase_dataset_id
 
 # Local LLM (Ollama)
 OLLAMA_BASE_URL=http://localhost:11434
