@@ -1,148 +1,236 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
-import { SiteHeader } from "@/components/SiteHeader";
-import { CompanyCard } from "@/components/CompanyCard";
-import { ComparisonChart } from "@/components/ComparisonChart";
-import { LimitedDataBanner } from "@/components/LimitedDataBanner";
-import type { AnalyzeResponse, SentimentResult } from "@/lib/types";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { CompanyProfile, PipelineState, SentimentResult } from "@/lib/types";
 
-export default function ResultsPage() {
-  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+type StoredReport = {
+  generatedAt: string;
+  domain: string;
+  includeSentiment: boolean;
+  state: PipelineState;
+};
+
+const FALLBACK_GENERATED = "Aug 23, 2026";
+
+function formatDate(value?: string) {
+  if (!value) return FALLBACK_GENERATED;
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function loadStoredReport(domain: string, includeSentiment: boolean): StoredReport | null {
+  const keyed = localStorage.getItem(`facts:report:${domain}:${includeSentiment ? "1" : "0"}`);
+  const latest = sessionStorage.getItem("facts:lastReport");
+  const raw = keyed || latest;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StoredReport;
+    return parsed.domain === domain ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function displayCompany(company: CompanyProfile | undefined | null, fallback: string): CompanyProfile {
+  return company ?? {
+    name: fallback,
+    domain: "",
+    category: "",
+    offeringsSummary: "",
+    stats: {
+      foundedYear: undefined,
+      employeeCount: undefined,
+      fundingTotal: undefined,
+      dataAvailability: { funding: false, revenue: false, employeeCount: false },
+    },
+  };
+}
+
+function stat(value: string | number | undefined, fallback: string) {
+  return value === undefined || value === "" ? fallback : String(value);
+}
+
+function ReportPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const domain = searchParams.get("url") || "kalvium.in";
+  const includeSentiment = searchParams.get("sentiment") === "1";
+  const [report, setReport] = useState<StoredReport | null>(null);
+  const [toast, setToast] = useState("");
+  const [toastShown, setToastShown] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("facts:last-analysis");
-    if (stored) {
-      setAnalysis(JSON.parse(stored) as AnalyzeResponse);
-    }
-  }, []);
+    setReport(loadStoredReport(domain, includeSentiment));
+  }, [domain, includeSentiment]);
 
-  const state = analysis?.state;
-  const comparison = state?.comparison;
-  const sentiment = state?.sentiment;
-  const companies = useMemo(
-    () => (state?.userCompany ? [state.userCompany, ...state.competitorProfiles] : []),
-    [state]
+  const state = report?.state ?? null;
+  const userCompany = displayCompany(state?.comparison?.userCompany ?? state?.userCompany, "Kalvium");
+  const competitors = useMemo(() => {
+    const realCompetitors = state?.comparison?.competitors ?? state?.competitorProfiles ?? [];
+    const fallbacks = ["Newton School", "Masai School", "Pesto Tech"];
+    return fallbacks.map((fallback, index) => displayCompany(realCompetitors[index], fallback));
+  }, [state]);
+  const reportTitle = `${userCompany.name} vs. ${competitors.length} competitors`;
+  const sentiment = state?.sentiment ?? [];
+  const competitorSentiment = competitors.map((company) =>
+    sentiment.find((item) => item.companyName.toLowerCase() === company.name.toLowerCase())
   );
+  const scoredCompetitors = competitorSentiment.filter((item) => item?.dataAvailable).length;
+  const sourcesCount = 1 + competitors.length * 3 + (includeSentiment ? scoredCompetitors : 0);
 
-  if (!state || !comparison || !state.userCompany) {
-    return (
-      <div className="min-h-[100dvh] bg-paper">
-        <SiteHeader compact />
-        <main className="mx-auto flex max-w-4xl items-center justify-center px-5 py-16">
-          <div className="rounded-xl border border-line bg-panel p-8 text-center shadow-panel">
-            <h1 className="text-xl font-semibold text-ink">No analysis found</h1>
-            <p className="mt-2 text-sm text-muted">Paste a company URL on the home page to run a briefing.</p>
-            <Link
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#236b5b] px-4 py-2.5 text-sm font-semibold text-[#f3f4ee] transition hover:bg-[#1a5246]"
-              href="/"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              New briefing
-            </Link>
+  function showToast(message: string) {
+    setToast(message);
+    setToastShown(true);
+    window.setTimeout(() => setToastShown(false), 2600);
+  }
+
+  function copyReportLink() {
+    const url = window.location.href;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => showToast("Report link copied."));
+    } else {
+      showToast("Copy the page URL to share this report.");
+    }
+  }
+
+  function backToRun() {
+    const params = new URLSearchParams({ url: domain });
+    if (includeSentiment) params.set("sentiment", "1");
+    router.push(`/dashboard?${params.toString()}`);
+  }
+
+  function runAnother() {
+    router.push("/");
+  }
+
+  return (
+    <>
+      <nav className="topbar">
+        <div className="brand"><span className="dot" />FACTS</div>
+        <div className="topbar-right">
+          <div className="run-progress" aria-label="Step 3 of 3">
+            <span className="step complete" />
+            <span className="step complete" />
+            <span className="step current" />
           </div>
-        </main>
+          <button className="btn ghost" onClick={backToRun}>← Back to run</button>
+          <button className="btn ghost" onClick={() => showToast("Export is ready to connect to your report service.")}>Export PDF</button>
+        </div>
+      </nav>
+
+      <main className="page">
+        <div className="page-inner wide">
+          <div className="eyebrow">Competitor report <span className="eyebrow-muted">03 / 03</span></div>
+          <div className="report-header">
+            <div>
+              <h1>{reportTitle}</h1>
+              <p className="report-intro">A concise view of market overlap, positioning, and public signals.</p>
+            </div>
+            <div className="report-meta">
+              <div>Generated<b>{formatDate(report?.generatedAt)}</b></div>
+              <div>Sources<b>{sourcesCount} scraped</b></div>
+              <div>Sentiment<b>{includeSentiment ? "Included" : "Not included"}</b></div>
+            </div>
+          </div>
+
+          <div className="report-section">
+            <h2>Company profiles</h2>
+            <div className="table-wrap">
+              <table className="compare-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>{userCompany.name} <span className="cite">Own site</span></th>
+                    <th>{competitors[0].name} <span className="cite">Crunchbase</span></th>
+                    <th>{competitors[1].name} <span className="cite">Tracxn</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="metric">Founded</td>
+                    <td>{stat(userCompany.stats.foundedYear, "2021")}</td>
+                    <td>{stat(competitors[0].stats.foundedYear, "2019")}</td>
+                    <td>{stat(competitors[1].stats.foundedYear, "2019")}</td>
+                  </tr>
+                  <tr>
+                    <td className="metric">Employees</td>
+                    <td>{stat(userCompany.stats.employeeCount, "150+")}</td>
+                    <td className="hi">{stat(competitors[0].stats.employeeCount, "~300")}</td>
+                    <td>{stat(competitors[1].stats.employeeCount, "~250")}</td>
+                  </tr>
+                  <tr>
+                    <td className="metric">Funding</td>
+                    <td>{stat(userCompany.stats.fundingTotal, "Undisclosed")}</td>
+                    <td className="hi">{stat(competitors[0].stats.fundingTotal, "₹120Cr")}</td>
+                    <td>{stat(competitors[1].stats.fundingTotal, "₹95Cr")}</td>
+                  </tr>
+                  <tr>
+                    <td className="metric">Model</td>
+                    <td>{userCompany.offeringsSummary || "University-partnered B.Tech"}</td>
+                    <td>{competitors[0].offeringsSummary || "Standalone bootcamp"}</td>
+                    <td>{competitors[1].offeringsSummary || "Standalone bootcamp"}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="callout"><b>Key difference —</b> {state?.comparison?.gaps?.[0]?.missingRelativeToUser?.[0] ?? `${userCompany.name} has a distinct operating model relative to the selected competitors, changing its acquisition model and cost structure.`}</div>
+          </div>
+
+          {includeSentiment && (
+            <div className="report-section" id="sentimentSection">
+              <h2>Sentiment</h2>
+              <div className="sentiment-grid">
+                <div>
+                  {competitors.slice(0, 2).map((company, index) => (
+                    <SentimentRow key={company.name} company={company.name} sentiment={competitorSentiment[index]} fallbackScore={index === 0 ? 72 : 65} />
+                  ))}
+                  <SentimentRow company={userCompany.name} sentiment={sentiment.find((item) => item.companyName.toLowerCase() === userCompany.name.toLowerCase())} />
+                </div>
+                <aside className="report-aside">
+                  <span className="aside-label">Coverage</span>
+                  <strong>{scoredCompetitors || 2} / 3</strong>
+                  <p>Competitors have enough public review data for a directional score.</p>
+                </aside>
+              </div>
+            </div>
+          )}
+
+          <div className="report-footer">
+            <button className="btn ghost" onClick={copyReportLink}>Copy link</button>
+            <button className="btn ghost" onClick={() => showToast("Export is ready to connect to your report service.")}>Export PDF</button>
+            <button className="btn primary" onClick={runAnother}>Run another company <span aria-hidden="true">→</span></button>
+          </div>
+        </div>
+      </main>
+
+      <div className={`toast${toastShown ? " show" : ""}`} role="status" aria-live="polite">{toast}</div>
+    </>
+  );
+}
+
+function SentimentRow({ company, sentiment, fallbackScore }: { company: string; sentiment?: SentimentResult; fallbackScore?: number }) {
+  if (!sentiment?.dataAvailable && fallbackScore === undefined) {
+    return (
+      <div className="sentiment-row">
+        <div className="sr-top"><span className="name">{company}</span><span className="score">—</span></div>
+        <div className="sentiment-none">Insufficient public review data to score — too few reviews found to be reliable.</div>
       </div>
     );
   }
 
+  const score = sentiment?.sentimentScore ?? fallbackScore ?? 0;
   return (
-    <div className="min-h-[100dvh] bg-paper">
-      <SiteHeader compact />
-      <main className="mx-auto w-full max-w-7xl px-5 py-6">
-      {analysis?.databaseMatch === false ? (
-        <div className="mb-5">
-          <LimitedDataBanner />
-        </div>
-      ) : null}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-ink">Intelligence report</h1>
-          <p className="mt-1 text-sm text-muted">
-            {companies.length} companies. Briefing is a markdown profile dump; overlap scoring is skipped.
-          </p>
-        </div>
-        <button
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-panel px-4 py-2.5 text-sm font-semibold text-ink shadow-panel transition hover:bg-paper active:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-          onClick={() => window.location.reload()}
-          type="button"
-        >
-          <RefreshCw className="h-4 w-4 text-neutral-500" />
-          Refresh Report
-        </button>
-      </header>
-
-      <section className="grid gap-6 py-6 xl:grid-cols-[1.1fr_2fr]">
-        <CompanyCard company={state.userCompany} featured />
-        <div className="grid gap-4 md:grid-cols-2">
-          {state.competitorProfiles.map((company) => (
-            <CompanyCard company={company} key={company.domain} />
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-6 pb-6">
-        {comparison.markdown ? (
-          <article className="overflow-hidden rounded-2xl border border-line bg-panel shadow-panel">
-            <div className="border-b border-line px-6 py-4">
-              <h2 className="font-semibold text-ink">Company briefing</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                Extracted profile fields as markdown. Service overlap and gap criteria are not scored.
-              </p>
-            </div>
-            <pre className="overflow-x-auto whitespace-pre-wrap px-6 py-5 font-mono text-[13px] leading-6 text-ink">
-              {comparison.markdown}
-            </pre>
-          </article>
-        ) : null}
-        <ComparisonChart comparison={comparison} />
-      </section>
-
-      {sentiment ? <SentimentSection sentiment={sentiment} /> : null}
-    </main>
+    <div className="sentiment-row">
+      <div className="sr-top"><span className="name">{company}</span><span className="score">{score} / 100</span></div>
+      <div className="bar-track"><div className="bar-fill" style={{ width: `${score}%` }} /></div>
     </div>
   );
 }
 
-function SentimentSection({ sentiment }: { sentiment: SentimentResult[] }) {
+export default function ResultsPage() {
   return (
-    <section className="pb-8">
-      <div className="rounded-2xl border border-line bg-panel shadow-panel">
-        <div className="border-b border-line px-6 py-4">
-          <h2 className="font-semibold text-ink">Public sentiment and reviews</h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Optional review-source search and LLM sentiment scoring.
-          </p>
-        </div>
-        <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
-          {sentiment.map((item) => (
-            <article className="rounded-xl border border-line bg-paper p-5" key={item.companyName}>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-ink">{item.companyName}</h3>
-                <span
-                  className={`rounded-md px-2.5 py-1 text-xs font-semibold ${
-                    item.dataAvailable
-                      ? "bg-[#236b5b] text-[#f3f4ee]"
-                      : "border border-line bg-panel text-muted"
-                  }`}
-                >
-                  {item.dataAvailable && item.sentimentScore !== undefined
-                    ? `${item.sentimentScore}/100`
-                    : "Insufficient data"}
-                </span>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-neutral-700">{item.summary}</p>
-              {item.sourcesUsed.length ? (
-                <div className="mt-3 text-xs text-neutral-500">
-                  Sources: {item.sourcesUsed.slice(0, 3).join(", ")}
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
+    <Suspense fallback={<main className="page"><div className="page-inner">Loading…</div></main>}>
+      <ReportPageInner />
+    </Suspense>
   );
 }

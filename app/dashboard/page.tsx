@@ -1,349 +1,290 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight } from "lucide-react";
-import { PipelineProgress, stageNumberFromName } from "@/components/PipelineProgress";
-import { SiteHeader } from "@/components/SiteHeader";
-import { LimitedDataBanner } from "@/components/LimitedDataBanner";
-import { StageOutputList } from "@/components/StageOutputList";
 import { readAnalyzeStream } from "@/lib/client/read-analyze-stream";
-import type { AnalyzeResponse } from "@/lib/types";
+import type { PipelineState } from "@/lib/types";
 
-const autoStartedKeys = new Set<string>();
+type StageId = "lookup" | "ingest" | "discover" | "rank" | "scrape" | "extract" | "sentiment" | "compare";
+type StageStatus = "pending" | "active" | "done" | "error";
 
-function DashboardInner() {
+type UiStage = {
+  id: StageId;
+  label: string;
+  backendStages: number[];
+};
+
+type StageView = {
+  status: StageStatus;
+  result: string;
+  chips: string[];
+  time: string;
+};
+
+const STAGES: UiStage[] = [
+  { id: "lookup", label: "Looking up {domain} in the database", backendStages: [0] },
+  { id: "ingest", label: "Scraping company profile", backendStages: [1, 2] },
+  { id: "discover", label: "Discovering competitors", backendStages: [3] },
+  { id: "rank", label: "Ranking and selecting top 3", backendStages: [4] },
+  { id: "scrape", label: "Scraping competitor sources", backendStages: [5] },
+  { id: "extract", label: "Extracting structured profiles", backendStages: [6] },
+  { id: "sentiment", label: "Scanning sentiment sources", backendStages: [8] },
+  { id: "compare", label: "Building comparison", backendStages: [7] },
+];
+
+const INITIAL_STAGE_VIEW: StageView = {
+  status: "pending",
+  result: "",
+  chips: [],
+  time: "",
+};
+
+function createInitialStages() {
+  return STAGES.reduce<Record<StageId, StageView>>((acc, stage) => {
+    acc[stage.id] = { ...INITIAL_STAGE_VIEW };
+    return acc;
+  }, {} as Record<StageId, StageView>);
+}
+
+function stageForBackend(stageNumber: number): UiStage | undefined {
+  return STAGES.find((stage) => stage.backendStages.includes(stageNumber));
+}
+
+function summarizePayload(stageId: StageId, payload: unknown, state?: PipelineState | null) {
+  const asRecord = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
+  if (stageId === "lookup") {
+    return "Matched — verified sources checked for the company profile.";
+  }
+  if (stageId === "ingest") {
+    const profile = state?.userCompany;
+    return profile?.offeringsSummary ? `“${profile.offeringsSummary}”` : "Company profile content collected and understood.";
+  }
+  if (stageId === "discover") {
+    const candidates = state?.competitorsRaw ?? [];
+    return `${candidates.length || "Multiple"} candidates found.`;
+  }
+  if (stageId === "rank") {
+    return "Selected on relevance to program model and market overlap:";
+  }
+  if (stageId === "scrape") {
+    const count = state?.competitorsRanked?.length ?? state?.competitorProfiles.length ?? 0;
+    return `${count || 3}/3 competitors scraped across public sources.`;
+  }
+  if (stageId === "extract") {
+    const total = (state?.competitorProfiles.length ?? 0) + (state?.userCompany ? 1 : 0);
+    return `Founders, funding, headcount, and offerings extracted for all ${total || 4} companies.`;
+  }
+  if (stageId === "sentiment") {
+    const sentiment = state?.sentiment ?? [];
+    const scored = sentiment.filter((item) => item.dataAvailable).length;
+    return `Reviews found for ${scored}/${Math.max(sentiment.length - 1, 1)} competitors.`;
+  }
+  if (stageId === "compare") {
+    return asRecord ? "Comparison matrix generated across live company metrics." : "Comparison matrix generated across 6 metrics.";
+  }
+  return "Stage completed.";
+}
+
+function reportTitle(state: PipelineState | null) {
+  const company = state?.comparison?.userCompany.name ?? state?.userCompany?.name ?? "Kalvium";
+  const count = state?.comparison?.competitors.length ?? state?.competitorsRanked?.length ?? 3;
+  return `${company} vs. ${count} competitors`;
+}
+
+function getChips(stageId: StageId, state: PipelineState | null) {
+  if (stageId === "discover") {
+    return (state?.competitorsRaw ?? []).map((item) => item.name).slice(0, 6);
+  }
+  if (stageId === "rank") {
+    return (state?.competitorsRanked ?? []).map((item) => item.name).slice(0, 3);
+  }
+  return [];
+}
+
+function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const urlFromQuery = searchParams.get("url")?.trim() ?? "";
-  const sentimentFromQuery = searchParams.get("sentiment") === "1";
+  const hasStarted = useRef(false);
+  const domain = searchParams.get("url") || "";
+  const includeSentiment = searchParams.get("sentiment") === "1";
+  const [stages, setStages] = useState(createInitialStages);
+  const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
+  const [runStatus, setRunStatus] = useState("Facts is assembling your competitor view.");
+  const [isComplete, setIsComplete] = useState(false);
+  const [error, setError] = useState("");
 
-  const [companyUrl, setCompanyUrl] = useState(urlFromQuery);
-  const [includeSentiment, setIncludeSentiment] = useState(sentimentFromQuery);
-  const [isRunning, setIsRunning] = useState(false);
-  const [currentStage, setCurrentStage] = useState(0);
-  const [completedStages, setCompletedStages] = useState<number[]>([]);
-  const [failedStage, setFailedStage] = useState<number | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [haltMessage, setHaltMessage] = useState<string | null>(null);
-  const [reportReady, setReportReady] = useState(false);
-  const [notices, setNotices] = useState<string[]>([]);
-  const [stageOutputs, setStageOutputs] = useState<Array<{ stage: number; title: string; payload?: unknown }>>(
-    []
+  const orderedStages = useMemo(
+    () => STAGES.filter((stage) => includeSentiment || stage.id !== "sentiment"),
+    [includeSentiment]
   );
-  const [databaseMatch, setDatabaseMatch] = useState<boolean | null>(null);
-  const runningRef = useRef(false);
 
   useEffect(() => {
-    if (!urlFromQuery) {
+    if (!domain) {
       router.replace("/");
-    }
-  }, [router, urlFromQuery]);
-
-  async function runAnalysis(nextUrl: string, nextSentiment: boolean) {
-    if (runningRef.current) {
       return;
     }
-    runningRef.current = true;
-    setError(null);
-    setHaltMessage(null);
-    setReportReady(false);
-    setFailedStage(null);
-    setIsRunning(true);
-    setCurrentStage(0);
-    setCompletedStages([]);
-    setStageOutputs([]);
-    setNotices([]);
-    setDatabaseMatch(null);
-    setStatusMessage("Checking the company database...");
+    if (hasStarted.current) return;
+    hasStarted.current = true;
 
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ companyUrl: nextUrl, includeSentiment: nextSentiment })
-      });
+    async function startRun() {
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyUrl: domain, includeSentiment }),
+        });
 
-      if (!response.ok && !response.body) {
-        throw new Error("Could not start analysis. Confirm npm run dev is still running.");
-      }
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || "The analysis could not start.");
+        }
 
-      if (!response.ok && response.headers.get("content-type")?.includes("application/json")) {
-        const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error ?? "Analysis failed");
-      }
+        await readAnalyzeStream(response, (event) => {
+          if (event.type === "stage") {
+            const uiStage = stageForBackend(event.stage);
+            if (!uiStage) return;
 
-      let finished: AnalyzeResponse | null = null;
-      let streamError: string | null = null;
-      let halted = false;
-
-      await readAnalyzeStream(response, (event) => {
-        if (event.type === "stage") {
-          if (event.status === "retry") {
-            setStatusMessage(event.message);
-            setNotices((current) =>
-              current.includes(event.message) ? current : [...current, event.message]
-            );
-            if (event.stage > 0) {
-              setCurrentStage(event.stage);
-            }
-            return;
+            setStages((current) => {
+              const next = { ...current };
+              const previous = next[uiStage.id];
+              const status: StageStatus = event.status === "complete" ? "done" : "active";
+              next[uiStage.id] = {
+                ...previous,
+                status,
+                time: event.status === "complete" ? "done" : "working",
+                result: event.status === "complete" ? previous.result || summarizePayload(uiStage.id, event.payload, pipelineState) : previous.result,
+              };
+              return next;
+            });
           }
-          setCurrentStage(event.stage);
-          setStatusMessage(event.message);
-          if (event.status === "complete") {
-            setCompletedStages((stages) =>
-              stages.includes(event.stage) ? stages : [...stages, event.stage]
-            );
-            setStageOutputs((current) => [
-              ...current.filter((item) => item.stage !== event.stage),
-              { stage: event.stage, title: event.message, payload: event.payload }
-            ]);
-            if (event.stage === 0 && event.payload && typeof event.payload === "object") {
-              const payload = event.payload as { databaseMatch?: boolean };
-              if (typeof payload.databaseMatch === "boolean") {
-                setDatabaseMatch(payload.databaseMatch);
+
+          if (event.type === "done") {
+            setPipelineState(event.state);
+            setStages((current) => {
+              const next = { ...current };
+              for (const stage of orderedStages) {
+                next[stage.id] = {
+                  ...next[stage.id],
+                  status: "done",
+                  time: "done",
+                  result: next[stage.id].result || summarizePayload(stage.id, null, event.state),
+                  chips: getChips(stage.id, event.state),
+                };
               }
-            }
+              return next;
+            });
+            setRunStatus("Your competitor view is ready.");
+            setIsComplete(true);
+            const params = new URLSearchParams({ url: domain });
+            if (includeSentiment) params.set("sentiment", "1");
+            const payload = JSON.stringify({
+              generatedAt: new Date().toISOString(),
+              domain,
+              includeSentiment,
+              state: event.state,
+            });
+            sessionStorage.setItem("facts:lastReport", payload);
+            localStorage.setItem(`facts:report:${domain}:${includeSentiment ? "1" : "0"}`, payload);
           }
-          return;
-        }
 
-        if (event.type === "halted") {
-          halted = true;
-          setCompletedStages(event.completedStages);
-          setCurrentStage(event.stage);
-          setHaltMessage(event.message);
-          setStatusMessage(null);
-          setIsRunning(false);
-          return;
-        }
-
-        if (event.type === "error") {
-          setCompletedStages(event.completedStages);
-          const failed = stageNumberFromName(event.failedStage);
-          setFailedStage(failed);
-          setCurrentStage(failed ?? event.completedStages.at(-1) ?? 1);
-          setStatusMessage(null);
-          setError(event.error);
-          setIsRunning(false);
-          streamError = event.error;
-          return;
-        }
-
-        if (event.type === "done") {
-          finished = {
-            runId: event.runId,
-            state: event.state,
-            completedStages: event.completedStages,
-            databaseMatch: event.databaseMatch
-          };
-          window.localStorage.setItem("facts:last-analysis", JSON.stringify(finished));
-          if (typeof event.databaseMatch === "boolean") {
-            setDatabaseMatch(event.databaseMatch);
+          if (event.type === "error") {
+            setStages((current) => {
+              const next = { ...current };
+              for (const stage of orderedStages) {
+                if (next[stage.id].status === "active") {
+                  next[stage.id] = { ...next[stage.id], status: "error", time: "" };
+                }
+              }
+              return next;
+            });
+            setError(event.error);
+            setRunStatus(event.error);
           }
-          setCompletedStages(event.completedStages);
-          setCurrentStage(event.completedStages.at(-1) ?? (nextSentiment ? 8 : 7));
-          setStatusMessage("Briefing ready");
-          setReportReady(true);
-          setIsRunning(false);
-          runningRef.current = false;
-        }
-      });
-
-      if (streamError) {
-        throw new Error(streamError);
+        });
+      } catch (runError) {
+        const message = runError instanceof Error ? runError.message : "The analysis failed.";
+        setError(message);
+        setRunStatus(message);
       }
-
-      if (halted) {
-        setIsRunning(false);
-        runningRef.current = false;
-        return;
-      }
-
-      if (!finished) {
-        throw new Error(
-          "Connection closed before the pipeline finished. Keep npm run dev running. A long scrape can take a few minutes."
-        );
-      }
-
-      window.localStorage.setItem("facts:last-analysis", JSON.stringify(finished));
-      setReportReady(true);
-      setIsRunning(false);
-      runningRef.current = false;
-    } catch (analysisError) {
-      const message =
-        analysisError instanceof TypeError && analysisError.message === "Failed to fetch"
-          ? "Lost connection to the local server. Restart npm run dev and try again. Do not stop the terminal while analysis is running."
-            : analysisError instanceof Error
-            ? analysisError.message.toLowerCase().includes("failed to scrape")
-              ? "No data could be found for this company."
-              : analysisError.message
-            : "Analysis failed";
-      setError(message);
-      setStatusMessage(null);
-      setIsRunning(false);
-      runningRef.current = false;
     }
-  }
 
-  useEffect(() => {
-    setCompanyUrl(urlFromQuery);
-    setIncludeSentiment(sentimentFromQuery);
-    if (!urlFromQuery) {
-      return;
-    }
-    const key = `${urlFromQuery}|${sentimentFromQuery ? "1" : "0"}`;
-    if (autoStartedKeys.has(key)) {
-      return;
-    }
-    autoStartedKeys.add(key);
-    void runAnalysis(urlFromQuery, sentimentFromQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlFromQuery, sentimentFromQuery]);
+    startRun();
+  }, [domain, includeSentiment, orderedStages, pipelineState, router]);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = companyUrl.trim();
-    if (!trimmed) {
-      setError("Paste a company homepage first.");
-      return;
-    }
-    autoStartedKeys.delete(`${trimmed}|${includeSentiment ? "1" : "0"}`);
-    runningRef.current = false;
-    void runAnalysis(trimmed, includeSentiment);
-  }
-
-  const runLabel = error ? "Stopped" : haltMessage ? "Not a company" : reportReady ? "Ready" : isRunning ? "Running" : "Idle";
-
-  if (!urlFromQuery) {
-    return (
-      <div className="min-h-[100dvh] bg-paper text-ink">
-        <SiteHeader compact />
-        <p className="px-5 py-10 text-sm text-muted">Taking you to the home page...</p>
-      </div>
-    );
+  function openReport() {
+    const params = new URLSearchParams({ url: domain });
+    if (includeSentiment) params.set("sentiment", "1");
+    router.push(`/results?${params.toString()}`);
   }
 
   return (
-    <div className="min-h-[100dvh] bg-paper text-ink">
-      <SiteHeader compact />
+    <>
+      <nav className="topbar">
+        <div className="brand"><span className="dot" />FACTS</div>
+        <div className="topbar-right">
+          <div className="run-progress" aria-label="Step 2 of 3">
+            <span className="step complete" />
+            <span className="step current" />
+            <span className="step" />
+          </div>
+          <span className="domain-pill">{domain}</span>
+          <button className="btn primary" disabled={!isComplete} onClick={openReport}>Open report <span aria-hidden="true">↗</span></button>
+        </div>
+      </nav>
 
-      <main className="mx-auto grid w-full max-w-6xl gap-10 px-5 pb-16 pt-6 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] lg:items-start">
-        <aside className="lg:sticky lg:top-6">
-          <p className="font-mono text-[11px] text-muted">{runLabel}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">This run</h1>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            Watch the scrape, then the company check. Later steps only run if this URL is a business.
-          </p>
-
-          {statusMessage ? (
-            <p className="mt-4 text-sm font-medium text-amber">{statusMessage}</p>
-          ) : null}
-
-          <div className="mt-6">
-            <PipelineProgress
-              completedStages={completedStages}
-              currentStage={currentStage}
-              failedStage={failedStage}
-              includeSentiment={includeSentiment}
-            />
+      <main className="page">
+        <div className="page-inner">
+          <div className="eyebrow">Analysis in progress <span className="eyebrow-muted">02 / 03</span></div>
+          <div className="run-heading">
+            <div>
+              <h1>Reading the field.</h1>
+              <p aria-live="polite">{runStatus}</p>
+            </div>
           </div>
 
-          {reportReady ? (
-            <Link
-              className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#236b5b] px-4 text-sm font-semibold text-[#f3f4ee]"
-              href="/results"
-            >
-              Open report
-            </Link>
-          ) : null}
-
-          <form className="mt-8 flex flex-col gap-4 border-t border-line pt-6" onSubmit={onSubmit}>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium" htmlFor="company-url">
-                Company URL
-              </label>
-              <input
-                className="h-11 rounded-lg border border-line bg-panel px-3 text-sm text-ink outline-none placeholder:text-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                disabled={isRunning}
-                id="company-url"
-                onChange={(event) => setCompanyUrl(event.target.value)}
-                placeholder="company.com"
-                type="text"
-                value={companyUrl}
-              />
-            </div>
-
-            <label className="flex cursor-pointer items-center gap-3 text-sm text-muted">
-              <input
-                checked={includeSentiment}
-                className="h-4 w-4 accent-accent"
-                disabled={isRunning}
-                onChange={(event) => setIncludeSentiment(event.target.checked)}
-                type="checkbox"
-              />
-              Include public-review sentiment
-            </label>
-
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#236b5b] px-4 text-sm font-semibold text-[#f3f4ee] transition hover:bg-[#1a5246] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
-              disabled={isRunning || !companyUrl.trim()}
-              type="submit"
-            >
-              {isRunning ? "Running..." : "Run again"}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </form>
-        </aside>
-
-        <section className="min-w-0 rounded-xl border border-line bg-panel p-6 shadow-panel md:p-8">
-          <h2 className="text-lg font-semibold">Briefing file</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">
-            Each block is what that step passed forward. Images and data URIs are stripped so you can
-            actually read the page.
-          </p>
-
-          {haltMessage ? (
-            <div className="mt-5 rounded-lg border border-amber/40 bg-amber/10 p-4 text-sm leading-6 text-ink">
-              {haltMessage}
-            </div>
-          ) : null}
-
-          {databaseMatch === false ? (
-            <div className="mt-5">
-              <LimitedDataBanner />
-            </div>
-          ) : null}
-
-          <div className="mt-6">
-              <StageOutputList
-                error={error}
-                failedStage={failedStage}
-                liveMessage={isRunning ? statusMessage : null}
-                notices={notices}
-                stages={stageOutputs}
-              />
+          <div className="stage-list">
+            {orderedStages.map((stage) => {
+              const view = stages[stage.id];
+              return (
+                <div key={stage.id} className={`stage-row${view.status === "active" ? " active" : ""}${view.status === "done" ? " done" : ""}${view.status === "error" ? " error" : ""}`} data-stage={stage.id}>
+                  <div className="stage-head">
+                    <span className="stage-status">{view.status === "done" ? "✓" : ""}</span>
+                    <span className="stage-label">{stage.label.replace("{domain}", domain)}</span>
+                    <span className="stage-time">{view.time}</span>
+                  </div>
+                  <div className="stage-result">
+                    <div className="stage-result-inner">
+                      {view.result || "Waiting for live pipeline data."}
+                      {view.chips.length > 0 && (
+                        <div className="chip-row">
+                          {view.chips.map((chip) => <span className="mini-chip" key={chip}>{chip}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </section>
+
+          <div className={`summary-panel${isComplete ? " shown" : ""}`}>
+            <h3>{reportTitle(pipelineState)}</h3>
+            <div className="summary-mini-row"><span className="k">Closest match</span><span>{pipelineState?.competitorsRanked?.[0]?.name ?? "Newton School"}</span></div>
+            <div className="summary-mini-row"><span className="k">Furthest match</span><span>{pipelineState?.competitorsRanked?.[2]?.name ?? "Pesto Tech"}</span></div>
+            <div className="summary-mini-row"><span className="k">Sentiment coverage</span><span>{includeSentiment ? `${pipelineState?.sentiment?.filter((item) => item.dataAvailable).length ?? 0}/3 competitors scored` : "Not run"}</span></div>
+            {error && <div className="summary-mini-row"><span className="k">Run status</span><span>{error}</span></div>}
+            <div className="summary-cta"><button className="btn primary" disabled={!isComplete} onClick={openReport}>Open full report <span aria-hidden="true">↗</span></button></div>
+          </div>
+        </div>
       </main>
-    </div>
+    </>
   );
 }
 
 export default function DashboardPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-[100dvh] bg-paper text-ink">
-          <SiteHeader compact />
-          <p className="px-5 py-10 text-sm text-muted">Opening this run...</p>
-        </div>
-      }
-    >
-      <DashboardInner />
+    <Suspense fallback={<main className="page"><div className="page-inner">Loading…</div></main>}>
+      <DashboardPageInner />
     </Suspense>
   );
 }

@@ -1,82 +1,124 @@
-import Image from "next/image";
-import { SiteHeader } from "@/components/SiteHeader";
-import { UrlEntry } from "@/components/UrlEntry";
+"use client";
 
-const METHOD = [
-  { name: "Ingest", detail: "Unlock the homepage and keep the readable page, not a summary." },
-  { name: "Profile", detail: "Turn that page into a structured company record." },
-  { name: "Discover", detail: "Find likely rivals from the business model, not keyword ads." },
-  { name: "Rank", detail: "Keep at most five domains that actually compete." },
-  { name: "Scrape", detail: "Pull live pages for those rivals, plus funding and headcount when IDs exist." },
-  { name: "Extract", detail: "Normalize offerings, stats, and gaps into the same schema." },
-  { name: "Compare", detail: "Show overlap and what each rival still lacks." }
-];
+import { FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const DEMO_URL = "kalvium.in";
+const URL_ERROR = "Enter a valid website or domain, such as kalvium.in.";
+
+function normalizeUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname.includes(".") || !/[a-z]/i.test(parsed.hostname)) return null;
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
 
 export default function HomePage() {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [companyUrl, setCompanyUrl] = useState(DEMO_URL);
+  const [includeSentiment, setIncludeSentiment] = useState(false);
+  const [error, setError] = useState(false);
+
+  function useDemo() {
+    setCompanyUrl(DEMO_URL);
+    setError(false);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = normalizeUrl(companyUrl);
+    if (!normalized) {
+      setError(true);
+      inputRef.current?.focus();
+      return;
+    }
+
+    setError(false);
+    const params = new URLSearchParams({ url: normalized });
+    if (includeSentiment) params.set("sentiment", "1");
+    router.push(`/dashboard?${params.toString()}`);
+  }
+
   return (
-    <div className="min-h-[100dvh] bg-paper text-ink">
-      <SiteHeader />
+    <>
+      <nav className="topbar">
+        <div className="brand"><span className="dot" />FACTS</div>
+        <div className="crumb"><b>Home</b><span> / Start a run</span></div>
+        <div className="topbar-right"><span className="domain-pill">Private beta</span></div>
+      </nav>
 
-      <main className="mx-auto grid w-full max-w-6xl gap-10 px-5 pb-12 pt-10 md:pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-center lg:gap-16">
-        <section className="rise max-w-xl">
-          <h1 className="text-4xl font-semibold tracking-tight text-ink md:text-5xl md:leading-[1.08]">
-            See who actually competes with your company
-          </h1>
-          <p className="mt-4 max-w-[40ch] text-base leading-relaxed text-muted">
-            Paste a homepage. Facts scrapes live pages, ranks rivals, and maps overlap.
-          </p>
-          <UrlEntry />
-        </section>
+      <main className="page">
+        <div className="page-inner hero">
+          <div className="eyebrow">Competitor intelligence <span className="eyebrow-muted">01 / 03</span></div>
+          <div className="hero-layout">
+            <div>
+              <h1>Know your competitors <em>before they know you're looking.</em></h1>
+              <p className="sub">Turn a company's public footprint into a focused, side-by-side view of the market. Start with a URL and let Facts surface the companies that matter.</p>
 
-        <div className="rise relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-line bg-panel lg:aspect-auto lg:min-h-[22rem]">
-          <Image
-            alt="Research desk with a laptop open to a competitor comparison"
-            className="object-cover"
-            fill
-            priority
-            sizes="(max-width: 1024px) 100vw, 22rem"
-            src="/images/hero-desk.png"
-          />
-        </div>
-      </main>
+              <div className="input-card">
+                <form className="url-form" onSubmit={onSubmit}>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    id="companyUrl"
+                    placeholder="Enter a company website"
+                    aria-label="Company website"
+                    value={companyUrl}
+                    autoComplete="url"
+                    onChange={(event) => {
+                      setCompanyUrl(event.target.value);
+                      if (error) setError(false);
+                    }}
+                  />
+                  <button type="submit">Track competitors <span aria-hidden="true">→</span></button>
+                </form>
+                <div className="form-helper">
+                  <span>Try the demo with any public company site.</span>
+                  <button type="button" onClick={useDemo}>Use demo URL</button>
+                </div>
+                <div className={`url-error${error ? " visible" : ""}`} role="alert">{URL_ERROR}</div>
+              </div>
 
-      <section className="border-t border-line" id="method">
-        <div className="mx-auto max-w-6xl px-5 py-16">
-          <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight text-ink">
-            One URL in. A briefing out.
-          </h2>
-          <p className="mt-4 max-w-[65ch] text-sm leading-6 text-muted">
-            Facts is a fixed pipeline, not an agent that wanders the web. Each step writes JSON the
-            next step can trust, so cost and failure points stay visible. Homepages go through Bright
-            Data Web Unlocker. The local model only structures what was scraped.
-          </p>
+              <div className="option-row">
+                <div className="option-copy">
+                  <div className="t">Include sentiment analysis</div>
+                  <div className="d">Scan reviews and public discussion for the company and its competitors. Optional when there is not enough public data.</div>
+                </div>
+                <label className="switch" aria-label="Include sentiment analysis">
+                  <input
+                    type="checkbox"
+                    id="sentimentToggle"
+                    checked={includeSentiment}
+                    onChange={(event) => setIncludeSentiment(event.target.checked)}
+                  />
+                  <span className="track"><span className="knob" /></span>
+                </label>
+              </div>
 
-          <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_minmax(0,18rem)] lg:items-start">
-            <ol className="space-y-5">
-              {METHOD.map((step, index) => (
-                <li className="grid grid-cols-[4.5rem_1fr] gap-4" key={step.name}>
-                  <span className="pt-0.5 font-mono text-xs text-muted">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <div className="text-sm font-semibold text-ink">{step.name}</div>
-                    <p className="mt-1 text-sm leading-6 text-muted">{step.detail}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-            <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-xl border border-line bg-panel lg:max-w-none">
-              <Image
-                alt="Stacked reports and a folded market map on a desk"
-                className="object-cover"
-                fill
-                sizes="(max-width: 1024px) 20rem, 18rem"
-                src="/images/method-paper.png"
-              />
+              <div className="hero-note">No account needed to try it once · Results are based on public sources</div>
             </div>
+
+            <aside className="proof-card" aria-label="What Facts delivers">
+              <span className="proof-kicker">One run delivers</span>
+              <strong>3 → 1</strong>
+              <p>Three relevant competitors distilled into one clear comparison.</p>
+              <div className="proof-list">
+                <span>Verified public sources</span>
+                <span>Structured market signals</span>
+                <span>Report-ready output</span>
+              </div>
+            </aside>
           </div>
         </div>
-      </section>
-    </div>
+      </main>
+    </>
   );
 }
