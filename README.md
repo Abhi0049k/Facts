@@ -10,40 +10,40 @@ Tagline: **AI-powered competitor intelligence, grounded in real data**.
 
 ```mermaid
 graph TD
-    User([👤 User / Business Analyst]) -->|1. Submit Target Company URL| Home[🏠 Home Page /]
-    Home -->|2. Route with Params| Dashboard[📊 Dashboard /dashboard]
-    Dashboard -->|3. SSE Connection| API[/api/analyze Endpoint]
+    User["User / Business Analyst"] -->|1. Submit Target Company URL| Home["Home Page (/)"]
+    Home -->|2. Route with Params| Dashboard["Dashboard (/dashboard)"]
+    Dashboard -->|3. SSE Connection| API["API Endpoint (/api/analyze)"]
     
-    subgraph Execution Pipeline [⚙️ 8-Stage Intelligence Pipeline]
-        API --> S0[Stage 0: DB Lookup]
-        S0 -->|Cached Record| S0Cache[Postgres Cache]
-        S0 -->|Live Scraping| S1[Stage 1: Ingest Site]
+    subgraph ExecutionPipeline ["8-Stage Intelligence Pipeline"]
+        API --> S0["Stage 0: DB Lookup"]
+        S0 -->|Cached Record| S0Cache["PostgreSQL Cache"]
+        S0 -->|Live Scraping| S1["Stage 1: Ingest Site"]
         
-        S1 -->|Bright Data Web Unlocker| BD1[Scraped Markdown / Text]
-        BD1 --> S2[Stage 2: Understand Company]
-        S2 -->|LLM Classification| S2Profile[Target Company Profile]
+        S1 -->|Bright Data Web Unlocker| BD1["Scraped Markdown Content"]
+        BD1 --> S2["Stage 2: Understand Company"]
+        S2 -->|LLM Classification| S2Profile["Target Company Profile"]
         
-        S2Profile --> S3[Stage 3: Discover Competitors]
-        S3 -->|Tavily Search + LLM| S3Candidates[Raw Competitor Candidates]
+        S2Profile --> S3["Stage 3: Discover Competitors"]
+        S3 -->|Tavily Search + LLM| S3Candidates["Raw Competitor Candidates"]
         
-        S3Candidates --> S4[Stage 4: Rank & Select]
-        S4 -->|LLM Scoring| S4Top5[Top 5 Relevant Competitors]
+        S3Candidates --> S4["Stage 4: Rank & Select"]
+        S4 -->|LLM Scoring| S4Top5["Top 5 Relevant Competitors"]
         
-        S4Top5 --> S5[Stage 5: Scrape Competitors]
-        S5 -->|Bright Data Datasets v3| BD2[Competitor Scrapings]
+        S4Top5 --> S5["Stage 5: Scrape Competitors"]
+        S5 -->|Bright Data Datasets v3| BD2["Competitor Scrapings"]
         
-        BD2 --> S6[Stage 6: Extract Metrics]
-        S6 -->|Tavily Search + LLM| S6Metrics[Founded, Funding, Employees, Revenue]
+        BD2 --> S6["Stage 6: Extract Metrics"]
+        S6 -->|Tavily Search + LLM| S6Metrics["Metrics (Founded, Funding, Employees, Revenue)"]
         
-        S6Metrics --> S7[Stage 7: Market Comparison]
-        S7 -->|LLM Briefing Engine| S7Briefing[Company Intelligence Briefing]
+        S6Metrics --> S7["Stage 7: Market Comparison"]
+        S7 -->|LLM Briefing Engine| S7Briefing["Company Intelligence Briefing"]
         
-        S7Briefing --> S8[Stage 8: Sentiment Analysis]
-        S8 -->|Tavily Review Search + LLM| S8Sentiment[Public Sentiment Scores]
+        S7Briefing --> S8["Stage 8: Sentiment Analysis"]
+        S8 -->|Tavily Review Search + LLM| S8Sentiment["Public Sentiment Scores"]
     end
 
     S8Sentiment -->|4. Real-Time SSE Events| Dashboard
-    Dashboard -->|5. Tabbed / Grid Briefing| ResultsView[📈 Results & Comparison Matrix]
+    Dashboard -->|5. Tabbed / Grid Briefing| ResultsView["Results & Comparison Matrix"]
 ```
 
 ---
