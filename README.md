@@ -145,9 +145,10 @@ BRIGHT_DATA_WEB_UNLOCKER_ZONE=your_unlocker_zone_name
 BRIGHT_DATA_COLLECTOR_LINKEDIN=your_linkedin_dataset_id
 BRIGHT_DATA_COLLECTOR_CRUNCHBASE=your_crunchbase_dataset_id
 
-# Local LLM (Ollama)
-OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=llama3.2:latest
+# Ollama Cloud / Local LLM
+OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_BASE_URL=https://api.ollama.com
+LLM_MODEL=gemma4:cloud
 
 # Database Connection (Supabase / Postgres)
 DATABASE_URL=postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres

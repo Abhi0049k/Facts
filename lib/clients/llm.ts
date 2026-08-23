@@ -3,19 +3,27 @@ import { z } from "zod";
 import { logger } from "./logger";
 import { asObjectList, repairCompanyProfile } from "./normalize-json";
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-
 function modelName(): string {
-  return process.env.LLM_MODEL?.trim() || "llama3.2:latest";
+  return process.env.LLM_MODEL?.trim() || "gemma4:cloud";
 }
 
 function getLlm() {
+  const apiKey = process.env.OLLAMA_API_KEY?.trim();
+  const baseUrl =
+    process.env.OLLAMA_BASE_URL?.trim() ||
+    (apiKey ? "https://api.ollama.com" : "http://localhost:11434");
+
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
   return new ChatOllama({
-    baseUrl: OLLAMA_BASE_URL,
+    baseUrl,
     model: modelName(),
     temperature: 0,
     format: "json",
-    think: false
+    headers: Object.keys(headers).length > 0 ? headers : undefined
   });
 }
 
