@@ -7,10 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "test:brightdata": "tsx scripts/test-brightdata.ts",
-    "import:companies": "tsx scripts/import-companies.ts",
-    "import:linkedin-xlsx": "tsx scripts/import-linkedin-xlsx.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@langchain/community": "^1.0.3",
@@ -40,6 +37,7 @@
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.1.0",
     "postcss": "^8.4.49",
+    "puppeteer": "^25.8.0",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.6",
     "typescript": "^5.7.2"

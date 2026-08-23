@@ -3,8 +3,8 @@
 import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const DEMO_URL = "kalvium.in";
-const URL_ERROR = "Enter a valid website or domain, such as kalvium.in.";
+const DEMO_URL = "https://kalvium.com/";
+const URL_ERROR = "Enter a valid website or domain, such as https://kalvium.com/.";
 
 function normalizeUrl(value: string) {
   const trimmed = value.trim();
