@@ -7,7 +7,17 @@ function modelName(): string {
   return process.env.LLM_MODEL?.trim() || "gemma4:cloud";
 }
 
-function getLlm() {
+function getLlm(useFallback = false) {
+  if (useFallback) {
+    logger.stageWarn("LLM", "Primary cloud model unreachable; falling back to local Ollama (http://localhost:11434, llama3.2:latest)");
+    return new ChatOllama({
+      baseUrl: "http://localhost:11434",
+      model: "llama3.2:latest",
+      temperature: 0,
+      format: "json"
+    });
+  }
+
   const apiKey = process.env.OLLAMA_API_KEY?.trim();
   const baseUrl =
     process.env.OLLAMA_BASE_URL?.trim() ||
@@ -32,9 +42,8 @@ No markdown, no code fences, no headings, no commentary, no <think> blocks.
 If the schema is a list, return a JSON array at the top level — not an object wrapper.`;
 
 /**
- * Calls the local Ollama model and validates the response against a Zod schema.
- * Models often wrap arrays as {"competitors":[...]}; we unwrap those before validate,
- * force JSON mode, extract JSON from mixed text, and retry once on failure.
+ * Calls the Ollama model and validates the response against a Zod schema.
+ * Automatically falls back to local instance if primary endpoint is unreachable.
  */
 export async function structuredCall<T>(
   stageName: string,
@@ -52,12 +61,27 @@ export async function structuredCall<T>(
   ];
 
   let lastError: Error | null = null;
-  const llm = getLlm();
+  let llm = getLlm(false);
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     let rawText = "";
     try {
-      const response = await invokeTimed(llm, messages);
+      let response;
+      try {
+        response = await invokeTimed(llm, messages);
+      } catch (invokeErr) {
+        const errStr = String(invokeErr).toLowerCase();
+        if (errStr.includes("unreachable") || errStr.includes("econnrefused") || errStr.includes("fetch failed") || errStr.includes("enotfound")) {
+          logger.stageWarn(stageName, "Primary LLM endpoint unreachable, switching to local model fallback", {
+            error: invokeErr instanceof Error ? invokeErr.message : String(invokeErr)
+          });
+          llm = getLlm(true);
+          response = await invokeTimed(llm, messages);
+        } else {
+          throw invokeErr;
+        }
+      }
+
       rawText = messageText(response.content);
       logger.debug(stageName, "LLM raw output received", {
         attempt,
@@ -288,11 +312,28 @@ export async function jsonCall(
   const model = modelName();
   logger.stageStart(stageName, "LLM JSON call", { model, format: "json" });
 
-  const llm = getLlm();
-  const response = await invokeTimed(llm, [
-    { role: "system", content: `${systemPrompt}\n\n${JSON_ONLY_INSTRUCTION}` },
-    { role: "user", content: userPrompt }
-  ]);
+  let llm = getLlm(false);
+  const messages = [
+    { role: "system" as const, content: `${systemPrompt}\n\n${JSON_ONLY_INSTRUCTION}` },
+    { role: "user" as const, content: userPrompt }
+  ];
+
+  let response;
+  try {
+    response = await invokeTimed(llm, messages);
+  } catch (invokeErr) {
+    const errStr = String(invokeErr).toLowerCase();
+    if (errStr.includes("unreachable") || errStr.includes("econnrefused") || errStr.includes("fetch failed") || errStr.includes("enotfound")) {
+      logger.stageWarn(stageName, "Primary LLM endpoint unreachable, switching to local model fallback", {
+        error: invokeErr instanceof Error ? invokeErr.message : String(invokeErr)
+      });
+      llm = getLlm(true);
+      response = await invokeTimed(llm, messages);
+    } else {
+      throw invokeErr;
+    }
+  }
+
   const rawText = messageText(response.content);
   logger.debug(stageName, "LLM raw output received", {
     chars: rawText.length,
