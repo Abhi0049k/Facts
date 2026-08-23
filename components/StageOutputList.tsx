@@ -115,8 +115,8 @@ function renderPayload(stage: number, payload: unknown) {
     if (!data.databaseMatch) {
       return (
         <p className="text-sm leading-6 text-muted">
-          {data.domain ? `${data.domain} is not in the verified company list.` : "No database match."}{" "}
-          Live discovery will run instead.
+          {data.domain ? `${data.domain} is not in the verified company list.` : "No database match."} Add this
+          company before running a briefing.
         </p>
       );
     }
@@ -147,8 +147,16 @@ function renderPayload(stage: number, payload: unknown) {
   }
 
   if (stage === 1) {
-    const data = payload as { url?: string; chars?: number; content?: string; truncated?: boolean };
-    const body = readableScrape(data.content ?? "", 2200);
+    const data = payload as {
+      url?: string;
+      sourceUrls?: string[];
+      sourceCount?: number;
+      chars?: number;
+      content?: string;
+      truncated?: boolean;
+    };
+    const body = data.content ?? "";
+    const sourceCount = data.sourceCount ?? data.sourceUrls?.length;
     return (
       <div>
         <p className="text-sm text-muted">
@@ -157,6 +165,20 @@ function renderPayload(stage: number, payload: unknown) {
           </a>
           <span className="ml-2 font-mono text-xs">{formatCount(data.chars)} characters</span>
         </p>
+        {sourceCount ? (
+          <p className="mt-2 text-xs text-muted">
+            Scraped {sourceCount} database source{sourceCount === 1 ? "" : "s"}.
+          </p>
+        ) : null}
+        {data.sourceUrls?.length ? (
+          <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
+            {data.sourceUrls.map((url) => (
+              <li className="break-words" key={url}>
+                {url}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <details className="mt-3">
           <summary className="cursor-pointer text-sm font-medium text-ink">Read page text</summary>
           <div className="mt-2 max-h-[28rem] overflow-y-auto rounded-lg border border-line bg-panel px-3 py-3">

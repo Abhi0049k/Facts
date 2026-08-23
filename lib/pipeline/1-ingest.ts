@@ -7,14 +7,15 @@ const STAGE = "Stage1-Ingest";
 
 export async function ingestUserCompany(
   companyUrl: string,
-  infoUrls: KnownSource[] = []
+  sources: KnownSource[] = []
 ): Promise<string> {
   const start = Date.now();
-  const targets = infoUrls.length ? infoUrls.map((source) => source.url) : [companyUrl];
+  const targets = sources.length ? uniqueUrls(sources.map((source) => source.url)) : [companyUrl];
   logger.stageStart(STAGE, "scraping company pages to markdown/JSON", {
     url: companyUrl,
     targets: targets.length,
-    fromDatabase: infoUrls.length > 0
+    fromDatabase: sources.length > 0,
+    sourceTypes: sources.map((source) => `${source.sourceCategory}:${source.sourceType}`)
   });
 
   try {
@@ -53,4 +54,8 @@ export async function ingestUserCompany(
   } catch (error) {
     failStage(STAGE, error, { url: companyUrl });
   }
+}
+
+function uniqueUrls(urls: string[]) {
+  return [...new Set(urls.filter(Boolean))];
 }

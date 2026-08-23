@@ -116,17 +116,50 @@ export async function runPipeline(
     });
   }
 
+  if (!lookup.found) {
+    const message = lookup.domain
+      ? `${lookup.domain} is not in the company database. Add this company before running a briefing.`
+      : "This company is not in the company database. Add this company before running a briefing.";
+    logger.pipelineComplete(input.runId, Date.now() - startTime, {
+      completedStages,
+      halted: "database_miss",
+      domain: lookup.domain
+    });
+    await onEvent({
+      type: "halted",
+      stage: 0,
+      siteKind: "not_a_company",
+      message,
+      payload: {
+        databaseMatch: false,
+        domain: lookup.domain
+      },
+      completedStages
+    });
+    return {
+      runId: input.runId,
+      state,
+      completedStages,
+      halted: true,
+      haltMessage: message,
+      databaseMatch: false
+    };
+  }
+
   if (!hasStage(completedStages, 1) || !rawContent) {
     invalidateFrom(1);
     await emitStage(onEvent, 1, "start");
+    const userCompanySources = uniqueSources([...lookup.infoUrls, ...lookup.sentimentUrls]);
     rawContent = await ingestUserCompany(
       input.companyUrl,
-      lookup.found ? lookup.infoUrls : []
+      userCompanySources
     );
     await completeStage(1, {
       url: input.companyUrl,
+      sourceUrls: userCompanySources.map((source) => source.url),
+      sourceCount: userCompanySources.length,
       chars: rawContent.length,
-      content: readableScrape(rawContent, 2200),
+      content: readableScrape(rawContent, SCRAPE_PREVIEW_CHARS),
       truncated: rawContent.length > SCRAPE_PREVIEW_CHARS
     });
   }
@@ -299,4 +332,15 @@ function uniqueStages(stages: number[]) {
 
 function hasStage(stages: number[], stage: number) {
   return stages.includes(stage);
+}
+
+function uniqueSources<T extends { url: string }>(sources: T[]) {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    if (!source.url || seen.has(source.url)) {
+      return false;
+    }
+    seen.add(source.url);
+    return true;
+  });
 }

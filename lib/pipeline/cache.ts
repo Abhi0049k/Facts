@@ -6,6 +6,7 @@ import type { CompetitorScrapeResult, PipelineCheckpoint, PipelineState, StageOu
 
 const STAGE = "WorkflowCache";
 const TTL_MS = 4 * 24 * 60 * 60 * 1000;
+const CACHE_VERSION = "v2";
 
 export type WorkflowCacheStatus = "partial" | "complete" | "failed";
 
@@ -32,7 +33,7 @@ export function workflowCacheKey(companyUrl: string, includeSentiment: boolean):
 } {
   const normalizedDomain = normalizeDomain(companyUrl);
   return {
-    cacheKey: `${normalizedDomain || companyUrl.trim().toLowerCase()}::sentiment=${includeSentiment ? "1" : "0"}`,
+    cacheKey: `${CACHE_VERSION}::${normalizedDomain || companyUrl.trim().toLowerCase()}::sentiment=${includeSentiment ? "1" : "0"}`,
     normalizedDomain
   };
 }
