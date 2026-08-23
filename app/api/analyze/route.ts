@@ -1,9 +1,15 @@
 import { randomUUID } from "crypto";
 import { logger, withPipelineRun } from "@/lib/clients/logger";
+import { readWorkflowCache, writeWorkflowCache } from "@/lib/pipeline/cache";
 import { withPipelineNotices } from "@/lib/pipeline/notices";
 import { runPipeline } from "@/lib/pipeline/run";
 import type { PipelineStreamEvent } from "@/lib/pipeline-events";
-import { PipelineStageError, type AnalyzeErrorResponse, type AnalyzeRequest } from "@/lib/types";
+import {
+  PipelineStageError,
+  type AnalyzeErrorResponse,
+  type AnalyzeRequest,
+  type PipelineCheckpoint
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +56,33 @@ export async function POST(request: Request) {
       withPipelineRun(runId, () =>
         withPipelineNotices((event) => send(event), async () => {
           const completedStages: number[] = [];
+          let latestCheckpoint: PipelineCheckpoint | null = null;
           try {
+            const cached = await readWorkflowCache(companyUrl, Boolean(body.includeSentiment));
+            if (cached?.status === "complete" && cached.state.comparison) {
+              logger.pipelineComplete(runId, 0, {
+                completedStages: cached.completedStages,
+                cacheHit: true
+              });
+              for (const stage of cached.stagePayloads.sort((a, b) => a.stage - b.stage)) {
+                send({
+                  type: "stage",
+                  stage: stage.stage,
+                  status: "complete",
+                  message: `Finished ${stageLabel(stage.stage)}`,
+                  payload: stage.payload
+                });
+              }
+              send({
+                type: "done",
+                runId,
+                state: cached.state,
+                completedStages: cached.completedStages,
+                databaseMatch: cached.databaseMatch
+              });
+              return;
+            }
+
             const result = await runPipeline(
               {
                 runId,
@@ -62,9 +94,34 @@ export async function POST(request: Request) {
                   completedStages.push(event.stage);
                 }
                 send(event);
+              },
+              {
+                resume: cached,
+                onCheckpoint: async (checkpoint) => {
+                  latestCheckpoint = checkpoint;
+                  await writeWorkflowCache(checkpoint, "partial");
+                }
               }
             );
             if (!result.halted) {
+              const savedCheckpoint = latestCheckpoint as PipelineCheckpoint | null;
+              const completeCheckpoint: PipelineCheckpoint = savedCheckpoint
+                ? {
+                    ...savedCheckpoint,
+                    state: result.state,
+                    completedStages: result.completedStages,
+                    databaseMatch: result.databaseMatch
+                  }
+                : {
+                    companyUrl,
+                    normalizedDomain: "",
+                    includeSentiment: Boolean(body.includeSentiment),
+                    completedStages: result.completedStages,
+                    stagePayloads: [],
+                    state: result.state,
+                    databaseMatch: result.databaseMatch
+                  };
+              await writeWorkflowCache(completeCheckpoint, "complete");
               send({
                 type: "done",
                 runId: result.runId ?? runId,
@@ -75,6 +132,12 @@ export async function POST(request: Request) {
             }
           } catch (error) {
             const failedStage = error instanceof PipelineStageError ? error.stage : "unknown";
+            if (latestCheckpoint) {
+              await writeWorkflowCache(latestCheckpoint, "failed", {
+                failedStage,
+                error: publicErrorMessage(error)
+              });
+            }
             logger.pipelineFailed(
               runId,
               failedStage,
@@ -113,6 +176,21 @@ export async function POST(request: Request) {
       "X-Accel-Buffering": "no"
     }
   });
+}
+
+function stageLabel(stage: number) {
+  const labels: Record<number, string> = {
+    0: "Lookup",
+    1: "Ingest site",
+    2: "Understand company",
+    3: "Discover competitors",
+    4: "Rank top five",
+    5: "Scrape competitors",
+    6: "Extract data",
+    7: "Compare market",
+    8: "Sentiment"
+  };
+  return labels[stage] ?? `Step ${stage}`;
 }
 
 function publicErrorMessage(error: unknown): string {

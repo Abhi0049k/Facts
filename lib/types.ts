@@ -43,6 +43,12 @@ export interface PipelineState {
   sentiment: SentimentResult[] | null;
 }
 
+export interface StageOutputRecord {
+  stage: number;
+  title: string;
+  payload?: unknown;
+}
+
 export interface ScrapedSourceContent {
   website: string | null;
   crunchbase: string | null;
@@ -54,6 +60,20 @@ export interface ScrapedSourceContent {
 export interface CompetitorScrapeResult {
   competitor: { name: string; domain: string };
   sources: ScrapedSourceContent;
+}
+
+export interface PipelineCheckpoint {
+  companyUrl: string;
+  normalizedDomain: string;
+  includeSentiment: boolean;
+  completedStages: number[];
+  stagePayloads: StageOutputRecord[];
+  state: PipelineState;
+  databaseMatch?: boolean;
+  lookup?: unknown;
+  rawContent?: string;
+  understood?: unknown;
+  competitorScrapes?: CompetitorScrapeResult[];
 }
 
 export interface AnalyzeRequest {

@@ -10,7 +10,13 @@ import { compareCompanies } from "@/lib/pipeline/7-compare";
 import { analyzeSentiment } from "@/lib/pipeline/8-sentiment";
 import type { PipelineStreamEvent } from "@/lib/pipeline-events";
 import { compactSourceText, readableScrape } from "@/lib/readable-scrape";
-import type { AnalyzeResponse, CompetitorScrapeResult, PipelineState } from "@/lib/types";
+import type {
+  AnalyzeResponse,
+  CompetitorScrapeResult,
+  PipelineCheckpoint,
+  PipelineState,
+  StageOutputRecord
+} from "@/lib/types";
 
 const STAGE_LABELS: Record<number, string> = {
   0: "Lookup",
@@ -28,58 +34,115 @@ const SCRAPE_PREVIEW_CHARS = 16_000;
 
 export async function runPipeline(
   input: { companyUrl: string; includeSentiment: boolean; runId: string },
-  onEvent: (event: PipelineStreamEvent) => void | Promise<void>
+  onEvent: (event: PipelineStreamEvent) => void | Promise<void>,
+  options?: {
+    resume?: PipelineCheckpoint | null;
+    onCheckpoint?: (checkpoint: PipelineCheckpoint) => void | Promise<void>;
+  }
 ): Promise<AnalyzeResponse> {
-  const completedStages: number[] = [];
+  let completedStages = uniqueStages(options?.resume?.completedStages ?? []);
+  let stagePayloads: StageOutputRecord[] = [...(options?.resume?.stagePayloads ?? [])];
   const startTime = Date.now();
-  const state: PipelineState = {
+  const state: PipelineState = options?.resume?.state
+    ? {
+        userCompany: options.resume.state.userCompany ?? null,
+        competitorsRaw: options.resume.state.competitorsRaw ?? null,
+        competitorsRanked: options.resume.state.competitorsRanked ?? null,
+        competitorProfiles: options.resume.state.competitorProfiles ?? [],
+        comparison: options.resume.state.comparison ?? null,
+        sentiment: options.resume.state.sentiment ?? null
+      }
+    : {
     userCompany: null,
     competitorsRaw: null,
     competitorsRanked: null,
     competitorProfiles: [],
     comparison: null,
     sentiment: null
+      };
+  let lookup = options?.resume?.lookup as Awaited<ReturnType<typeof lookupCompany>> | undefined;
+  let rawContent = options?.resume?.rawContent;
+  let understood = options?.resume?.understood as Awaited<ReturnType<typeof understandCompany>> | undefined;
+  let competitorScrapes = options?.resume?.competitorScrapes;
+  let databaseMatch = options?.resume?.databaseMatch;
+
+  const checkpoint = async () => {
+    await options?.onCheckpoint?.({
+      companyUrl: input.companyUrl,
+      normalizedDomain: lookup?.domain ?? options?.resume?.normalizedDomain ?? "",
+      includeSentiment: input.includeSentiment,
+      completedStages,
+      stagePayloads,
+      state,
+      databaseMatch,
+      lookup,
+      rawContent,
+      understood,
+      competitorScrapes
+    });
   };
+
+  const completeStage = async (stage: number, payload: unknown) => {
+    completedStages = uniqueStages([...completedStages, stage]);
+    stagePayloads = [
+      ...stagePayloads.filter((item) => item.stage !== stage),
+      { stage, title: `Finished ${STAGE_LABELS[stage]}`, payload }
+    ];
+    await emitStage(onEvent, stage, "complete", payload);
+    await checkpoint();
+  };
+
+  for (const cached of stagePayloads.sort((a, b) => a.stage - b.stage)) {
+    await emitStage(onEvent, cached.stage, "complete", cached.payload);
+  }
 
   logger.pipelineStart(input.runId, {
     companyUrl: input.companyUrl,
-    includeSentiment: input.includeSentiment
+    includeSentiment: input.includeSentiment,
+    resumedStages: completedStages
   });
 
-  await emitStage(onEvent, 0, "start");
-  const lookup = await lookupCompany(input.companyUrl);
-  completedStages.push(0);
-  await emitStage(onEvent, 0, "complete", {
-    databaseMatch: lookup.found,
-    domain: lookup.domain,
-    companyName: lookup.found ? lookup.companyName : null,
-    infoUrls: lookup.found ? lookup.infoUrls : [],
-    sentimentUrls: lookup.found ? lookup.sentimentUrls : []
-  });
+  if (!hasStage(completedStages, 0) || !lookup) {
+    invalidateFrom(0);
+    await emitStage(onEvent, 0, "start");
+    lookup = await lookupCompany(input.companyUrl);
+    databaseMatch = lookup.found;
+    await completeStage(0, {
+      databaseMatch: lookup.found,
+      domain: lookup.domain,
+      companyName: lookup.found ? lookup.companyName : null,
+      infoUrls: lookup.found ? lookup.infoUrls : [],
+      sentimentUrls: lookup.found ? lookup.sentimentUrls : []
+    });
+  }
 
-  await emitStage(onEvent, 1, "start");
-  const rawContent = await ingestUserCompany(
-    input.companyUrl,
-    lookup.found ? lookup.infoUrls : []
-  );
-  completedStages.push(1);
-  await emitStage(onEvent, 1, "complete", {
-    url: input.companyUrl,
-    chars: rawContent.length,
-    content: readableScrape(rawContent, 2200),
-    truncated: rawContent.length > SCRAPE_PREVIEW_CHARS
-  });
+  if (!hasStage(completedStages, 1) || !rawContent) {
+    invalidateFrom(1);
+    await emitStage(onEvent, 1, "start");
+    rawContent = await ingestUserCompany(
+      input.companyUrl,
+      lookup.found ? lookup.infoUrls : []
+    );
+    await completeStage(1, {
+      url: input.companyUrl,
+      chars: rawContent.length,
+      content: readableScrape(rawContent, 2200),
+      truncated: rawContent.length > SCRAPE_PREVIEW_CHARS
+    });
+  }
 
-  await emitStage(onEvent, 2, "start");
-  const understood = await understandCompany(rawContent, input.companyUrl, {
-    knownName: lookup.found ? lookup.companyName : undefined
-  });
-  completedStages.push(2);
-  await emitStage(onEvent, 2, "complete", {
-    siteKind: understood.siteKind,
-    reason: understood.reason,
-    profile: understood.profile
-  });
+  if (!hasStage(completedStages, 2) || !understood) {
+    invalidateFrom(2);
+    await emitStage(onEvent, 2, "start");
+    understood = await understandCompany(rawContent, input.companyUrl, {
+      knownName: lookup.found ? lookup.companyName : undefined
+    });
+    await completeStage(2, {
+      siteKind: understood.siteKind,
+      reason: understood.reason,
+      profile: understood.profile
+    });
+  }
 
   if (understood.siteKind !== "company" || !understood.profile) {
     const message =
@@ -107,61 +170,94 @@ export async function runPipeline(
 
   state.userCompany = understood.profile;
 
-  await emitStage(onEvent, 3, "start");
-  state.competitorsRaw = await discoverCompetitors(state.userCompany);
-  completedStages.push(3);
-  await emitStage(onEvent, 3, "complete", { candidates: state.competitorsRaw });
+  if (!hasStage(completedStages, 3) || !state.competitorsRaw) {
+    invalidateFrom(3);
+    await emitStage(onEvent, 3, "start");
+    state.competitorsRaw = await discoverCompetitors(state.userCompany);
+    await completeStage(3, { candidates: state.competitorsRaw });
+  }
 
-  await emitStage(onEvent, 4, "start");
-  state.competitorsRanked = await rankCompetitors(state.userCompany, state.competitorsRaw);
-  completedStages.push(4);
-  await emitStage(onEvent, 4, "complete", { ranked: state.competitorsRanked });
+  if (!hasStage(completedStages, 4) || !state.competitorsRanked) {
+    invalidateFrom(4);
+    await emitStage(onEvent, 4, "start");
+    state.competitorsRanked = await rankCompetitors(state.userCompany, state.competitorsRaw);
+    await completeStage(4, { ranked: state.competitorsRanked });
+  }
 
-  await emitStage(onEvent, 5, "start");
-  const competitorScrapes = await scrapeCompetitors(state.competitorsRanked);
-  completedStages.push(5);
-  await emitStage(onEvent, 5, "complete", { scrapes: summarizeCompetitorScrapes(competitorScrapes) });
+  if (!hasStage(completedStages, 5) || !competitorScrapes) {
+    invalidateFrom(5);
+    await emitStage(onEvent, 5, "start");
+    competitorScrapes = await scrapeCompetitors(state.competitorsRanked);
+    await completeStage(5, { scrapes: summarizeCompetitorScrapes(competitorScrapes) });
+  }
 
-  await emitStage(onEvent, 6, "start");
-  state.competitorProfiles = await extractCompetitorProfiles(competitorScrapes, async (message) => {
-    await onEvent({
-      type: "stage",
-      stage: 6,
-      status: "retry",
-      message
+  if (!hasStage(completedStages, 6) || !state.competitorProfiles.length) {
+    invalidateFrom(6);
+    await emitStage(onEvent, 6, "start");
+    state.competitorProfiles = await extractCompetitorProfiles(competitorScrapes, async (message) => {
+      await onEvent({
+        type: "stage",
+        stage: 6,
+        status: "retry",
+        message
+      });
     });
-  });
-  completedStages.push(6);
-  await emitStage(onEvent, 6, "complete", {
-    profiles: state.competitorProfiles.map((profile) => ({
-      name: profile.name,
-      domain: profile.domain,
-      category: profile.category,
-      offeringsSummary: profile.offeringsSummary,
-      stats: profile.stats
-    }))
-  });
+    await completeStage(6, {
+      profiles: state.competitorProfiles.map((profile) => ({
+        name: profile.name,
+        domain: profile.domain,
+        category: profile.category,
+        offeringsSummary: profile.offeringsSummary,
+        stats: profile.stats
+      }))
+    });
+  }
 
-  await emitStage(onEvent, 7, "start");
-  state.comparison = await compareCompanies(state.userCompany, state.competitorProfiles);
-  completedStages.push(7);
-  await emitStage(onEvent, 7, "complete", {
-    markdown: state.comparison.markdown
-  });
+  if (!hasStage(completedStages, 7) || !state.comparison) {
+    invalidateFrom(7);
+    await emitStage(onEvent, 7, "start");
+    state.comparison = await compareCompanies(state.userCompany, state.competitorProfiles);
+    await completeStage(7, {
+      markdown: state.comparison.markdown
+    });
+  }
 
-  if (input.includeSentiment) {
+  if (input.includeSentiment && (!hasStage(completedStages, 8) || !state.sentiment)) {
+    invalidateFrom(8);
     await emitStage(onEvent, 8, "start");
     state.sentiment = await analyzeSentiment([state.userCompany, ...state.competitorProfiles], {
       userDomain: lookup.domain || state.userCompany.domain,
       knownSentimentUrls: lookup.found ? lookup.sentimentUrls : [],
       databaseMatch: lookup.found
     });
-    completedStages.push(8);
-    await emitStage(onEvent, 8, "complete", { sentiment: state.sentiment });
+    await completeStage(8, { sentiment: state.sentiment });
   }
 
   logger.pipelineComplete(input.runId, Date.now() - startTime, { completedStages });
   return { runId: input.runId, state, completedStages, databaseMatch: lookup.found };
+
+  function invalidateFrom(stage: number) {
+    completedStages = completedStages.filter((completed) => completed < stage);
+    stagePayloads = stagePayloads.filter((payload) => payload.stage < stage);
+    if (stage <= 3) {
+      state.competitorsRaw = null;
+    }
+    if (stage <= 4) {
+      state.competitorsRanked = null;
+    }
+    if (stage <= 5) {
+      competitorScrapes = undefined;
+    }
+    if (stage <= 6) {
+      state.competitorProfiles = [];
+    }
+    if (stage <= 7) {
+      state.comparison = null;
+    }
+    if (stage <= 8) {
+      state.sentiment = null;
+    }
+  }
 }
 
 async function emitStage(
@@ -195,4 +291,12 @@ function summarizeCompetitorScrapes(results: CompetitorScrapeResult[]) {
       ])
     )
   }));
+}
+
+function uniqueStages(stages: number[]) {
+  return [...new Set(stages)].sort((a, b) => a - b);
+}
+
+function hasStage(stages: number[], stage: number) {
+  return stages.includes(stage);
 }

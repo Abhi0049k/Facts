@@ -28,3 +28,28 @@ model CompanySource {
   @@unique([companyId, url])
   @@index([companyId])
 }
+
+model WorkflowCache {
+  id                String   @id @default(uuid())
+  cacheKey          String   @unique
+  companyUrl        String
+  normalizedDomain  String
+  includeSentiment  Boolean
+  status            String
+  completedStages   Int[]
+  failedStage       String?
+  error             String?
+  databaseMatch     Boolean?
+  stagePayloads     Json
+  state             Json?
+  lookup            Json?
+  rawContent        String?
+  understood        Json?
+  competitorScrapes Json?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([cacheKey, expiresAt])
+  @@index([normalizedDomain])
+}
