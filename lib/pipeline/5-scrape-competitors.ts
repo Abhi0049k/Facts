@@ -7,6 +7,8 @@ import {
   slugFromName
 } from "@/lib/clients/brightdata";
 import { failStage, logger } from "@/lib/clients/logger";
+import { prisma } from "@/lib/clients/prisma";
+import { normalizeDomain } from "@/lib/normalize-domain";
 import { tavilySearch } from "@/lib/clients/tavily";
 import { type CompetitorScrapeResult } from "@/lib/types";
 
@@ -23,26 +25,37 @@ export async function scrapeCompetitors(
   logger.stageStart(STAGE, `scraping ${competitors.length} competitors`);
 
   try {
-    const websites = await mapPool(competitors, PAGE_CONCURRENCY, async (competitor) => {
-      const websiteUrl = `https://${competitor.domain.replace(/^https?:\/\//, "")}`;
-      logger.debug(STAGE, `scraping website ${competitor.name}`, { domain: competitor.domain });
+    const knownSources = await mapPool(competitors, PAGE_CONCURRENCY, loadKnownSources);
+    const websites = await mapPool(competitors.map((competitor, index) => ({ competitor, index })), PAGE_CONCURRENCY, async ({ competitor, index }) => {
+      const websiteUrl = knownSources[index]?.websiteUrl ?? `https://${competitor.domain.replace(/^https?:\/\//, "")}`;
+      logger.debug(STAGE, `scraping website ${competitor.name}`, { domain: competitor.domain, websiteUrl });
       return scrapePage(websiteUrl);
     });
 
     const crunchbaseByIndex = await scrapeResolvedSource(
       competitors,
+      knownSources.map((source) => source.profileUrls.crunchbase),
       CRUNCHBASE_SOURCE,
       "crunchbase",
       (competitor) => `https://www.crunchbase.com/organization/${slugFromName(competitor.name)}`
     );
     const linkedinByIndex = await scrapeResolvedSource(
       competitors,
+      knownSources.map((source) => source.profileUrls.linkedin),
       LINKEDIN_SOURCE,
       "linkedin",
       (competitor) => `https://www.linkedin.com/company/${slugFromName(competitor.name)}`
     );
+    const tracxnByIndex = await scrapeResolvedSource(
+      competitors,
+      knownSources.map((source) => source.profileUrls.tracxn),
+      undefined,
+      "tracxn",
+      (competitor) => `https://tracxn.com/d/companies/${slugFromName(competitor.name)}`
+    );
     const toflerByIndex = await scrapeResolvedSource(
       competitors,
+      knownSources.map((source) => source.profileUrls.tofler),
       TOFLER_SOURCE,
       "tofler",
       (competitor) => `https://www.tofler.in/${slugFromName(competitor.name)}`
@@ -52,7 +65,7 @@ export async function scrapeCompetitors(
       const sources = {
         website: websites[index] ?? null,
         crunchbase: crunchbaseByIndex[index] ?? null,
-        tracxn: null,
+        tracxn: tracxnByIndex[index] ?? null,
         linkedin: linkedinByIndex[index] ?? null,
         tofler: toflerByIndex[index] ?? null
       };
@@ -77,6 +90,7 @@ export async function scrapeCompetitors(
         name: result.competitor.name,
         website: Boolean(result.sources.website),
         crunchbase: Boolean(result.sources.crunchbase),
+        tracxn: Boolean(result.sources.tracxn),
         linkedin: Boolean(result.sources.linkedin),
         tofler: Boolean(result.sources.tofler)
       }))
@@ -90,20 +104,29 @@ export async function scrapeCompetitors(
 
 async function scrapeResolvedSource(
   competitors: { name: string; domain: string }[],
+  knownUrls: Array<string | undefined>,
   sourceId: string | undefined,
-  kind: "crunchbase" | "linkedin" | "tofler",
+  kind: "crunchbase" | "linkedin" | "tracxn" | "tofler",
   fallbackUrl: (competitor: { name: string; domain: string }) => string
 ): Promise<(string | null)[]> {
-  if (!isUsableSourceId(sourceId)) {
-    return competitors.map(() => null);
-  }
-
   const urls = await Promise.all(
-    competitors.map(async (competitor) => {
+    competitors.map(async (competitor, index) => {
+      if (knownUrls[index]) {
+        return knownUrls[index]!;
+      }
       const resolved = await resolveProfileUrl(competitor, kind);
       return resolved ?? fallbackUrl(competitor);
     })
   );
+
+  if (!isUsableSourceId(sourceId)) {
+    return mapPool(urls, PAGE_CONCURRENCY, async (url) => {
+      if (!url) {
+        return null;
+      }
+      return scrapePage(url);
+    });
+  }
 
   const rows = await scrapeMany(sourceId, urls);
   return rows.map((row) => serializeResult(row));
@@ -111,14 +134,16 @@ async function scrapeResolvedSource(
 
 async function resolveProfileUrl(
   competitor: { name: string; domain: string },
-  kind: "crunchbase" | "linkedin" | "tofler"
+  kind: "crunchbase" | "linkedin" | "tracxn" | "tofler"
 ): Promise<string | null> {
   const query =
     kind === "crunchbase"
       ? `${competitor.name} ${competitor.domain} site:crunchbase.com/organization`
       : kind === "linkedin"
         ? `${competitor.name} ${competitor.domain} site:linkedin.com/company`
-        : `${competitor.name} ${competitor.domain} site:tofler.in`;
+        : kind === "tracxn"
+          ? `${competitor.name} ${competitor.domain} site:tracxn.com`
+          : `${competitor.name} ${competitor.domain} site:tofler.in`;
 
   const results = await tavilySearch(query).catch((error) => {
     logger.stageWarn(STAGE, "profile URL search failed", {
@@ -139,6 +164,9 @@ async function resolveProfileUrl(
       if (kind === "linkedin" && host === "linkedin.com" && parsed.pathname.includes("/company/")) {
         return parsed.toString();
       }
+      if (kind === "tracxn" && host.endsWith("tracxn.com")) {
+        return parsed.toString();
+      }
       if (kind === "tofler" && host.endsWith("tofler.in")) {
         return parsed.toString();
       }
@@ -152,4 +180,76 @@ async function resolveProfileUrl(
     kind
   });
   return null;
+}
+
+type KnownCompetitorSources = {
+  websiteUrl?: string;
+  profileUrls: {
+    crunchbase?: string;
+    linkedin?: string;
+    tracxn?: string;
+    tofler?: string;
+  };
+};
+
+async function loadKnownSources(competitor: { name: string; domain: string }): Promise<KnownCompetitorSources> {
+  const empty: KnownCompetitorSources = { profileUrls: {} };
+  if (!process.env.DATABASE_URL?.trim()) {
+    return empty;
+  }
+
+  const domain = normalizeDomain(competitor.domain);
+  if (!domain) {
+    return empty;
+  }
+
+  try {
+    const existing = await prisma.company.findUnique({
+      where: { primaryDomain: domain },
+      include: { sources: true }
+    });
+
+    if (!existing) {
+      return empty;
+    }
+
+    const infoSources = existing.sources.filter((source) => source.sourceCategory === "info");
+    const websiteUrl =
+      infoSources.find((source) => /own_about_page|official|about|homepage|other/i.test(source.sourceType))?.url ??
+      infoSources[0]?.url;
+
+    const profileUrls = {
+      crunchbase: findSourceUrl(infoSources, "crunchbase"),
+      linkedin: findSourceUrl(infoSources, "linkedin"),
+      tracxn: findSourceUrl(infoSources, "tracxn"),
+      tofler: findSourceUrl(infoSources, "tofler")
+    };
+
+    logger.debug(STAGE, "loaded competitor links from database", {
+      competitor: competitor.name,
+      domain,
+      websiteUrl,
+      profileUrls
+    });
+
+    return { websiteUrl, profileUrls };
+  } catch (error) {
+    logger.stageWarn(STAGE, "competitor database source lookup failed", {
+      competitor: competitor.name,
+      domain,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return empty;
+  }
+}
+
+function findSourceUrl(
+  sources: Array<{ url: string; sourceType: string }>,
+  kind: "crunchbase" | "linkedin" | "tracxn" | "tofler"
+): string | undefined {
+  return sources.find((source) => {
+    const sourceType = source.sourceType.toLowerCase();
+    const url = source.url.toLowerCase();
+    return sourceType.includes(kind) || url.includes(`${kind}.`);
+  })?.url;
 }

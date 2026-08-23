@@ -140,12 +140,16 @@ function DashboardInner() {
             completedStages: event.completedStages,
             databaseMatch: event.databaseMatch
           };
+          window.localStorage.setItem("facts:last-analysis", JSON.stringify(finished));
           if (typeof event.databaseMatch === "boolean") {
             setDatabaseMatch(event.databaseMatch);
           }
           setCompletedStages(event.completedStages);
-          setCurrentStage(nextSentiment ? 8 : 7);
+          setCurrentStage(event.completedStages.at(-1) ?? (nextSentiment ? 8 : 7));
           setStatusMessage("Briefing ready");
+          setReportReady(true);
+          setIsRunning(false);
+          runningRef.current = false;
         }
       });
 

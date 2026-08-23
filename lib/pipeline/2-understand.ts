@@ -138,11 +138,16 @@ function hydrateUnderstand(
   }
 
   const repaired = repairCompanyProfile(record.profile ?? record);
-  const name = repaired?.name && !isDummyName(repaired.name) ? repaired.name : fallback.name;
+  const repairedName = stringField(repaired, "name");
+  const repairedOfferings = stringField(repaired, "offeringsSummary");
+  const name = repairedName && !isDummyName(repairedName) ? repairedName : fallback.name;
   const offerings =
-    repaired?.offeringsSummary && !isDummyCopy(repaired.offeringsSummary)
-      ? repaired.offeringsSummary
+    repairedOfferings && !isDummyCopy(repairedOfferings)
+      ? repairedOfferings
       : fallback.offeringsSummary;
+  const repairedCategory = stringField(repaired, "category");
+  const repairedSearchIntent = stringField(repaired, "searchIntentPhrase");
+  const repairedStats = repaired?.stats;
 
   return {
     siteKind: "company",
@@ -151,27 +156,32 @@ function hydrateUnderstand(
       name,
       domain,
       category:
-        repaired?.category && repaired.category !== "company" ? String(repaired.category) : fallback.category,
+        repairedCategory && repairedCategory !== "company" ? repairedCategory : fallback.category,
       offeringsSummary: offerings,
       searchIntentPhrase:
-        (typeof repaired?.searchIntentPhrase === "string" && repaired.searchIntentPhrase) ||
+        repairedSearchIntent ||
         fallback.searchIntentPhrase,
       founders: Array.isArray(repaired?.founders)
         ? repaired.founders.filter((entry): entry is string => typeof entry === "string")
         : fallback.founders,
       stats: {
-        fundingTotal: asOptionalString(repaired?.stats, "fundingTotal"),
-        employeeCount: asOptionalString(repaired?.stats, "employeeCount"),
-        revenueEstimate: asOptionalString(repaired?.stats, "revenueEstimate"),
-        foundedYear: asYear(repaired?.stats),
+        fundingTotal: asOptionalString(repairedStats, "fundingTotal"),
+        employeeCount: asOptionalString(repairedStats, "employeeCount"),
+        revenueEstimate: asOptionalString(repairedStats, "revenueEstimate"),
+        foundedYear: asYear(repairedStats),
         dataAvailability: {
-          funding: Boolean(asOptionalString(repaired?.stats, "fundingTotal")),
-          revenue: Boolean(asOptionalString(repaired?.stats, "revenueEstimate")),
-          employeeCount: Boolean(asOptionalString(repaired?.stats, "employeeCount"))
+          funding: Boolean(asOptionalString(repairedStats, "fundingTotal")),
+          revenue: Boolean(asOptionalString(repairedStats, "revenueEstimate")),
+          employeeCount: Boolean(asOptionalString(repairedStats, "employeeCount"))
         }
       }
     }
   };
+}
+
+function stringField(record: Record<string, unknown> | null, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function scrapeFallbackProfile(rawContent: string, domain: string, knownName?: string): CompanyProfile {

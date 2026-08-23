@@ -159,7 +159,9 @@ function renderPayload(stage: number, payload: unknown) {
         </p>
         <details className="mt-3">
           <summary className="cursor-pointer text-sm font-medium text-ink">Read page text</summary>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted">{body}</p>
+          <div className="mt-2 max-h-[28rem] overflow-y-auto rounded-lg border border-line bg-panel px-3 py-3">
+            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-muted">{body}</p>
+          </div>
         </details>
       </div>
     );
